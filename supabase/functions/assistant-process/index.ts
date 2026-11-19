@@ -7,7 +7,10 @@
 //   ANTHROPIC_MODEL    — opcional (padrão abaixo)
 import { createClient } from 'npm:@supabase/supabase-js@2'
 
-const MODEL = Deno.env.get('ANTHROPIC_MODEL') ?? 'claude-sonnet-5-5'
+// Haiku classifica (barato e rápido); Sonnet revisa só quando há dúvida.
+const MODEL = Deno.env.get('ANTHROPIC_MODEL') ?? 'claude-haiku-5-5'
+const FALLBACK_MODEL = Deno.env.get('ANTHROPIC_FALLBACK_MODEL') ?? 'claude-sonnet-5-5'
+const ESCALATE_BELOW = 0.7
 const FREE_MONTHLY_LIMIT_FALLBACK = 50
 const MAX_TEXT = 4000
 
@@ -43,14 +46,15 @@ ${list}
 Regras:
 1. Uma mensagem pode gerar vários itens, um por fato (ex.: "paguei R$ 120 na academia e fiz 40 min de musculação" = despesa em financas + treino em exercicios).
 2. Use somente módulos da lista. Se o fato pertence a um módulo não habilitado, ou não tem destino claro, use module_key "nenhum" e explique em "ambiguity".
-3. Valores em dinheiro: inteiro em centavos em data.valor_centavos (R$ 120,50 = 12050).
+3. Valores em dinheiro: campo valor_centavos, inteiro em centavos (R$ 120,50 = "12050").
 4. Preencha "ambiguity" quando faltar informação importante (ex.: forma de pagamento desconhecida não é ambiguidade; valor ausente numa despesa é). Confiança de 0 a 1.
 5. Nunca invente valores que o usuário não disse.
 6. Saúde, sonhos e emoções: registre o que foi relatado. Não faça diagnóstico, não interprete clinicamente, não recomende tratamento.
 7. Perguntas: intent "pergunta", nenhum item; responda em "reply" que a consulta aos dados registrados estará disponível em breve. Não responda perguntas de conhecimento geral.
 8. "reply": uma frase curta, em português, resumindo o que foi entendido, para o usuário confirmar.
+9. "ambiguity": string vazia quando não houver dúvida.
 
-Campos sugeridos em data (use os que se aplicam):
+Em "fields", informe pares campo/valor (valor sempre como texto). Campos sugeridos (use os que se aplicam):
 - financas: valor_centavos, data, descricao, categoria, forma_pagamento, vencimento, parcelas
 - exercicios: atividade, duracao_min, series, repeticoes, carga_kg, distancia_km, data
 - agenda: titulo, data, horario, duracao_min, local, com_quem
@@ -61,58 +65,91 @@ Campos sugeridos em data (use os que se aplicam):
 - memorias: texto, tags`
 }
 
-const TOOL = {
-  name: 'registrar',
-  description: 'Registra a interpretação estruturada da mensagem do usuário.',
-  input_schema: {
-    type: 'object',
-    properties: {
-      intent: { type: 'string', enum: ['registro', 'pergunta', 'comando', 'agendamento', 'indefinido'] },
-      reply: { type: 'string', description: 'Frase curta em português para o usuário.' },
+// Saída estruturada (output_config.format). Regras do formato: todo objeto
+// precisa de additionalProperties:false e não aceita chaves livres; por isso
+// os campos do registro vêm como lista de pares {campo, valor}.
+const SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['intent', 'reply', 'items'],
+  properties: {
+    intent: { type: 'string', enum: ['registro', 'pergunta', 'comando', 'agendamento', 'indefinido'] },
+    reply: { type: 'string', description: 'Frase curta em português para o usuário.' },
+    items: {
+      type: 'array',
       items: {
-        type: 'array',
-        items: {
-          type: 'object',
-          properties: {
-            module_key: { type: 'string', description: 'Chave do módulo habilitado, ou "nenhum".' },
-            kind: { type: 'string' },
-            title: { type: 'string', description: 'Título curto do registro, ex.: "Academia — R$ 120,00".' },
-            data: { type: 'object' },
-            confidence: { type: 'number', minimum: 0, maximum: 1 },
-            ambiguity: { type: ['string', 'null'] },
+        type: 'object',
+        additionalProperties: false,
+        required: ['module_key', 'kind', 'title', 'fields', 'confidence', 'ambiguity'],
+        properties: {
+          module_key: { type: 'string', description: 'Chave do módulo habilitado, ou "nenhum".' },
+          kind: { type: 'string' },
+          title: { type: 'string', description: 'Título curto, ex.: "Academia — R$ 120,00".' },
+          fields: {
+            type: 'array',
+            description: 'Dados do registro como pares campo/valor. Use os nomes de campo sugeridos.',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['campo', 'valor'],
+              properties: { campo: { type: 'string' }, valor: { type: 'string' } },
+            },
           },
-          required: ['module_key', 'kind', 'title', 'data', 'confidence'],
+          confidence: { type: 'number', description: 'De 0 a 1.' },
+          ambiguity: { type: 'string', description: 'O que falta ou é duvidoso; string vazia se nada.' },
         },
       },
     },
-    required: ['intent', 'reply', 'items'],
   },
 }
 
-interface ClaudeResult {
-  intent: string
-  reply: string
-  items: { module_key: string; kind: string; title: string; data: Record<string, unknown>; confidence: number; ambiguity?: string | null }[]
+interface ClaudeItem { module_key: string; kind: string; title: string; fields: { campo: string; valor: string }[]; confidence: number; ambiguity: string }
+interface ClaudeResult { intent: string; reply: string; items: ClaudeItem[] }
+
+const NUMERIC = new Set(['valor_centavos', 'parcelas', 'duracao_min', 'series', 'repeticoes', 'carga_kg', 'distancia_km', 'intensidade', 'quantidade_ml'])
+const LISTS = new Set(['alimentos', 'emocoes', 'sintomas', 'tags'])
+
+function toData(fields: ClaudeItem['fields']): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const { campo, valor } of fields ?? []) {
+    const k = String(campo).trim().toLowerCase()
+    const v = String(valor).trim()
+    if (!k || !v) continue
+    if (NUMERIC.has(k)) {
+      const n = Number(v.replace(/[^\d,.-]/g, '').replace(',', '.'))
+      if (Number.isFinite(n)) out[k] = k === 'valor_centavos' ? Math.round(n) : n
+    } else if (LISTS.has(k)) {
+      out[k] = v.split(/[,;]/).map((x) => x.trim()).filter(Boolean)
+    } else {
+      out[k] = v
+    }
+  }
+  return out
 }
 
-async function callClaude(apiKey: string, system: string, text: string) {
+async function callClaude(apiKey: string, model: string, system: string, text: string) {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
-    headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+    headers: { 'x-api-key': apiKey, 'anthropic-version': '2026-10-21', 'content-type': 'application/json' },
     body: JSON.stringify({
-      model: MODEL,
-      max_tokens: 1500,
+      model,
+      max_tokens: 2000,
       system,
-      tools: [TOOL],
-      tool_choice: { type: 'tool', name: 'registrar' },
+      output_config: { format: { type: 'json_schema', schema: SCHEMA } },
       messages: [{ role: 'user', content: text }],
     }),
   })
   const body = await res.json()
   if (!res.ok) throw new Error(`Claude ${res.status}: ${body?.error?.message ?? 'erro desconhecido'}`)
-  const block = body.content?.find((c: { type: string }) => c.type === 'tool_use')
-  if (!block) throw new Error('Resposta da IA sem estrutura')
-  return { result: block.input as ClaudeResult, usage: body.usage as { input_tokens: number; output_tokens: number } }
+  const block = body.content?.find((c: { type: string }) => c.type === 'text')
+  if (!block?.text) throw new Error('Resposta da IA vazia')
+  const result = JSON.parse(block.text) as ClaudeResult
+  return { result, usage: body.usage as { input_tokens: number; output_tokens: number } }
+}
+
+function needsReview(r: ClaudeResult) {
+  if (r.intent === 'registro' && (!r.items || r.items.length === 0)) return true
+  return (r.items ?? []).some((i) => (Number(i.confidence) || 0) < ESCALATE_BELOW || (i.ambiguity ?? '').trim() !== '')
 }
 
 Deno.serve(async (req) => {
@@ -181,18 +218,36 @@ Deno.serve(async (req) => {
   // 5. Classificação e extração.
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'long' }).format(new Date())
   try {
-    const { result, usage } = await callClaude(apiKey, systemPrompt(modules, today), text)
+    const system = systemPrompt(modules, today)
+    const first = await callClaude(apiKey, MODEL, system, text)
+    let result = first.result
+    let usedModel = MODEL
+    let tokensIn = first.usage?.input_tokens ?? 0
+    let tokensOut = first.usage?.output_tokens ?? 0
+    // Escala para o modelo mais capaz só quando o primeiro ficou em dúvida.
+    if (FALLBACK_MODEL && FALLBACK_MODEL !== MODEL && needsReview(result)) {
+      try {
+        const second = await callClaude(apiKey, FALLBACK_MODEL, system, text)
+        result = second.result
+        usedModel = `${MODEL}→${FALLBACK_MODEL}`
+        tokensIn += second.usage?.input_tokens ?? 0
+        tokensOut += second.usage?.output_tokens ?? 0
+      } catch (e) {
+        console.warn('fallback falhou; mantendo primeira resposta', e instanceof Error ? e.message : e)
+      }
+    }
     const items = (result.items ?? []).map((i) => {
       const valid = enabled.has(i.module_key)
+      const amb = (i.ambiguity ?? '').trim()
       return {
         owner_id: user.id,
         message_id: messageId,
         module_key: valid ? i.module_key : null,
         kind: String(i.kind || 'indefinido').slice(0, 40),
         title: String(i.title || 'Registro').slice(0, 200),
-        data: i.data ?? {},
+        data: toData(i.fields),
         confidence: Math.max(0, Math.min(1, Number(i.confidence) || 0)),
-        ambiguity: valid ? (i.ambiguity ?? null) : (i.ambiguity ?? 'Sem módulo de destino disponível no seu plano'),
+        ambiguity: valid ? (amb || null) : (amb || 'Sem módulo de destino disponível no seu plano'),
       }
     })
     if (items.length) {
@@ -201,7 +256,7 @@ Deno.serve(async (req) => {
     }
     await admin.from('assistant_messages').update({
       status: 'processed', intent: result.intent, reply_text: result.reply?.slice(0, 1000) ?? null,
-      model: MODEL, tokens_in: usage?.input_tokens, tokens_out: usage?.output_tokens,
+      model: usedModel, tokens_in: tokensIn, tokens_out: tokensOut,
       processed_at: new Date().toISOString(), error: null, attempts,
     }).eq('id', messageId)
     return json({ message_id: messageId, intent: result.intent, reply: result.reply, drafts: items.length })
