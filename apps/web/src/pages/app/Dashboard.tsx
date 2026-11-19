@@ -74,9 +74,6 @@ export function DashboardPage() {
           )
         })}
       </div>
-      {modules.length < 8 && (
-        <p className="mt-4 text-sm text-stone-500">Seu plano libera {modules.length} de 8 módulos. Planos pagos chegam com o módulo de assinaturas.</p>
-      )}
     </div>
   )
 }

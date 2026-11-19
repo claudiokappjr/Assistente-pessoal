@@ -6,6 +6,7 @@ import {
 import { useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthProvider'
+import { STATUS_LABEL } from '../lib/types'
 import { Logo, ThemeToggle } from './ui'
 
 type Area = 'app' | 'pro' | 'admin'
@@ -40,7 +41,7 @@ const NAV: Record<Area, Item[]> = {
   admin: [
     { to: '/admin', label: 'Indicadores', icon: BarChart3, end: true },
     { to: '/admin/usuarios', label: 'Usuários', icon: Users },
-    { to: '/admin/catalogo', label: 'Módulos e planos', icon: Briefcase },
+    { to: '/admin/catalogo', label: 'Planos e preços', icon: Briefcase },
     { to: '/admin/integracoes', label: 'Integrações', icon: MessageCircle },
     { to: '/admin/auditoria', label: 'Auditoria', icon: ScrollText },
   ],
@@ -64,7 +65,7 @@ function linkClass(isActive: boolean) {
 }
 
 export function AppLayout({ area }: { area: Area }) {
-  const { profile, modules, hasRole, signOut, session } = useAuth()
+  const { profile, modules, hasRole, signOut, session, hasActiveSubscription, subscriptions, accountLoaded } = useAuth()
   const [open, setOpen] = useState(false)
   const navigate = useNavigate()
   const location = useLocation()
@@ -150,7 +151,9 @@ export function AppLayout({ area }: { area: Area }) {
         </header>
 
         <main key={location.pathname} className="mx-auto w-full max-w-5xl flex-1 px-4 pb-28 pt-6 md:px-8 lg:pb-12 lg:pt-10">
-          <Outlet />
+          {area === 'app' && accountLoaded && !hasActiveSubscription && !OPEN_WITHOUT_PLAN.includes(location.pathname)
+            ? <PendingSubscription subscriptions={subscriptions} />
+            : <Outlet />}
         </main>
 
         <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-stone-200 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden dark:border-stone-800 dark:bg-stone-900/95">
@@ -164,6 +167,33 @@ export function AppLayout({ area }: { area: Area }) {
           {mobileItems.slice(2, 4).map((i) => <MobileLink key={i.to} item={i} />)}
         </nav>
       </div>
+    </div>
+  )
+}
+
+// Telas acessíveis mesmo sem assinatura ativa (aceitar convite, ver dados da conta).
+const OPEN_WITHOUT_PLAN = ['/app/configuracoes', '/app/profissionais']
+
+function PendingSubscription({ subscriptions }: { subscriptions: ReturnType<typeof useAuth>['subscriptions'] }) {
+  return (
+    <div className="mx-auto max-w-lg py-6 text-center">
+      <div className="mx-auto mb-4 grid size-14 place-items-center rounded-full bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300"><Shield className="size-6" /></div>
+      <h1 className="font-display text-2xl font-semibold">Assinatura aguardando ativação</h1>
+      {subscriptions.length > 0 ? (
+        <div className="mt-4 space-y-2">
+          {subscriptions.map((s) => (
+            <div key={s.id} className="card flex items-center justify-between !py-3 text-left">
+              <div>
+                <div className="font-medium">Plano {s.plans.name}</div>
+                {s.plans.audience === 'professional' && <div className="text-xs text-stone-500">até {s.seats ?? s.plans.limits?.clientes} clientes · {s.pro_modules.length} módulo(s) de gestão</div>}
+              </div>
+              <span className="badge bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300">{STATUS_LABEL[s.status]}</span>
+            </div>
+          ))}
+        </div>
+      ) : <p className="mt-3 text-sm text-stone-500">Sua conta ainda não tem um plano.</p>}
+      <p className="mt-5 text-sm text-stone-600 dark:text-stone-400">O pagamento online estará disponível em breve. Enquanto isso, nossa equipe libera o acesso manualmente — você será avisado.</p>
+      <p className="mt-2 text-sm text-stone-500">Se um profissional te convidou, aceite o convite em <NavLink to="/app/profissionais" className="text-brand-700 underline dark:text-brand-300">Meus profissionais</NavLink>.</p>
     </div>
   )
 }

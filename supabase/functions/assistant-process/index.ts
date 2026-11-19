@@ -13,7 +13,7 @@ const FALLBACK_MODEL = Deno.env.get('ANTHROPIC_FALLBACK_MODEL') ?? 'claude-sonne
 // Só chama o modelo maior quando a confiança é baixa de verdade. Dúvidas
 // pequenas (ex.: forma de pagamento) ficam marcadas para o usuário revisar.
 const ESCALATE_BELOW = 0.6
-const FREE_MONTHLY_LIMIT_FALLBACK = 50
+const DEFAULT_MONTHLY_LIMIT = 1000
 const MAX_TEXT = 4000
 
 const cors = {
@@ -194,9 +194,10 @@ Deno.serve(async (req) => {
     if (!text) return json({ error: 'Mensagem vazia' }, 400)
     if (text.length > MAX_TEXT) return json({ error: `Mensagem muito longa (máx. ${MAX_TEXT} caracteres)` }, 400)
 
-    // Limite mensal do plano (até as assinaturas existirem, vale o gratuito).
-    const { data: plan } = await admin.from('plans').select('limits').eq('key', 'gratuito').maybeSingle()
-    const limit = Number((plan?.limits as Record<string, number> | null)?.mensagens_ia_mes ?? FREE_MONTHLY_LIMIT_FALLBACK)
+    // Limite mensal conforme a assinatura ativa (o maior, se houver mais de uma).
+    const { data: subs } = await admin.from('subscriptions').select('plans(limits)').eq('user_id', user.id).eq('status', 'active')
+    if (!subs?.length) return json({ error: 'Sua assinatura não está ativa. Fale com o suporte para liberar o acesso.' }, 402)
+    const limit = Math.max(...subs.map((s) => Number((s.plans as unknown as { limits: Record<string, number> } | null)?.limits?.mensagens_ia_mes ?? DEFAULT_MONTHLY_LIMIT)))
     const ym = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit' }).format(new Date())
     const monthStart = new Date(`${ym}-01T00:00:00-03:00`)
     const { count } = await admin.from('assistant_messages').select('id', { count: 'exact', head: true })

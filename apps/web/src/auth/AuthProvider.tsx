@@ -1,7 +1,7 @@
 import type { Session } from '@supabase/supabase-js'
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
 import { supabase } from '../lib/supabase'
-import type { AppRole, Module, Profile } from '../lib/types'
+import type { AppRole, Module, ProPlan, Profile, Subscription } from '../lib/types'
 
 interface AuthState {
   session: Session | null
@@ -10,6 +10,11 @@ interface AuthState {
   roles: AppRole[]
   /** Módulos liberados para o usuário (plano + habilitação). */
   modules: Module[]
+  subscriptions: Subscription[]
+  hasActiveSubscription: boolean
+  proPlan: ProPlan | null
+  /** Dados da conta (papéis, assinatura) já carregados para a sessão atual. */
+  accountLoaded: boolean
   hasRole: (r: AppRole) => boolean
   refresh: () => Promise<void>
   signOut: () => Promise<void>
@@ -23,18 +28,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null)
   const [roles, setRoles] = useState<AppRole[]>([])
   const [modules, setModules] = useState<Module[]>([])
+  const [subscriptions, setSubscriptions] = useState<Subscription[]>([])
+  const [proPlan, setProPlan] = useState<ProPlan | null>(null)
+  const [accountLoaded, setAccountLoaded] = useState(false)
 
   const load = useCallback(async (s: Session | null) => {
     if (!s) {
-      setProfile(null); setRoles([]); setModules([])
+      setProfile(null); setRoles([]); setModules([]); setSubscriptions([]); setProPlan(null); setAccountLoaded(false)
       return
     }
     const uid = s.user.id
-    const [p, r, m] = await Promise.all([
+    const [p, r, m, subs, pp] = await Promise.all([
       supabase.from('profiles').select('*').eq('id', uid).maybeSingle(),
       supabase.from('user_roles').select('role').eq('user_id', uid),
       supabase.from('user_modules').select('enabled, modules(*)').eq('user_id', uid).eq('enabled', true),
+      supabase.from('subscriptions').select('*, plans(key, name, audience, limits)').eq('user_id', uid).neq('status', 'canceled').order('created_at', { ascending: false }),
+      supabase.rpc('my_pro_plan'),
     ])
+    setSubscriptions((subs.data ?? []) as Subscription[])
+    setProPlan(((pp.data ?? []) as ProPlan[])[0] ?? null)
     setProfile((p.data as Profile) ?? null)
     setRoles(((r.data ?? []) as { role: AppRole }[]).map((x) => x.role))
     const mods = ((m.data ?? []) as unknown as { modules: Module }[])
@@ -42,6 +54,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .filter((x) => x?.is_active)
       .sort((a, b) => a.sort_order - b.sort_order)
     setModules(mods)
+    setAccountLoaded(true)
   }, [])
 
   useEffect(() => {
@@ -66,6 +79,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     profile,
     roles,
     modules,
+    subscriptions,
+    hasActiveSubscription: subscriptions.some((x) => x.status === 'active'),
+    proPlan,
+    accountLoaded,
     hasRole: (r) => roles.includes(r),
     refresh: () => load(session),
     signOut: async () => { await supabase.auth.signOut() },

@@ -22,6 +22,7 @@ export interface Module {
   is_sensitive: boolean
   sort_order: number
   is_active: boolean
+  pro_addon_price_cents?: number | null
 }
 
 export interface Specialty {
@@ -42,6 +43,10 @@ export interface Plan {
   limits: Record<string, number>
   is_active: boolean
   sort_order: number
+}
+
+export const STATUS_LABEL: Record<SubscriptionStatus, string> = {
+  pending_payment: 'Aguardando pagamento', active: 'Ativa', past_due: 'Pagamento atrasado', canceled: 'Cancelada',
 }
 
 export interface ProfessionalProfile {
@@ -96,6 +101,8 @@ export interface AuditLog {
   changes: Record<string, unknown> | null
 }
 
+export type SubscriptionStatus = 'pending_payment' | 'active' | 'past_due' | 'canceled'
+
 export interface AdminUser {
   id: string
   email: string
@@ -104,4 +111,31 @@ export interface AdminUser {
   created_at: string
   last_sign_in_at: string | null
   professional_approved: boolean
+  plan_key: string | null
+  plan_name: string | null
+  subscription_status: SubscriptionStatus | null
+  subscription_source: 'payment' | 'admin' | 'professional' | null
+  pro_modules: string[] | null
+  seats: number | null
+  seats_used: number
+}
+
+export interface Subscription {
+  id: string
+  user_id: string
+  status: SubscriptionStatus
+  source: 'payment' | 'admin' | 'professional'
+  sponsor_id: string | null
+  pro_modules: string[]
+  seats: number | null
+  plans: { key: string; name: string; audience: 'individual' | 'professional'; limits: Record<string, number> }
+}
+
+export interface ProPlan {
+  plan_key: string
+  plan_name: string
+  seats: number
+  seats_used: number
+  pro_modules: string[]
+  status: SubscriptionStatus
 }

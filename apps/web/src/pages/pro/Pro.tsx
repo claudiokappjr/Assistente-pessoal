@@ -7,6 +7,8 @@ import { formatDate } from '../../lib/format'
 import { errorMessage, supabase } from '../../lib/supabase'
 import type { Consent, Link, Module, ProfessionalProfile, Profile, Specialty } from '../../lib/types'
 import { MODULES } from '../../modules/config'
+import { AccessLink, ProPlanPicker } from '../../components/plans'
+import { STATUS_LABEL } from '../../lib/types'
 import { ModulePage } from '../../modules/ModulePage'
 
 function useProfessional() {
@@ -34,6 +36,8 @@ export function BecomeProfessionalPage() {
   const [council, setCouncil] = useState('')
   const [registration, setRegistration] = useState('')
   const [selected, setSelected] = useState<string[]>([])
+  const [planKey, setPlanKey] = useState('pro_10')
+  const [proModules, setProModules] = useState<string[]>([])
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const navigate = useNavigate()
@@ -45,12 +49,14 @@ export function BecomeProfessionalPage() {
   async function submit(e: FormEvent) {
     e.preventDefault()
     if (!selected.length) return setError('Escolha pelo menos uma especialidade.')
+    if (!proModules.length) return setError('Escolha pelo menos um módulo para gerenciar.')
     setBusy(true); setError('')
     const { error } = await supabase.rpc('become_professional', {
       _public_name: name.trim(), _council: council.trim() || null, _registration: registration.trim() || null, _specialty_ids: selected,
     })
+    const { error: e2 } = error ? { error: null } : await supabase.rpc('request_pro_subscription', { _plan_key: planKey, _pro_modules: proModules })
     setBusy(false)
-    if (error) return setError(errorMessage(error))
+    if (error || e2) return setError(errorMessage(error ?? e2))
     await refresh()
     navigate('/pro')
   }
@@ -88,8 +94,30 @@ export function BecomeProfessionalPage() {
             <input id="rg" className="input" value={registration} onChange={(e) => setRegistration(e.target.value)} placeholder="Ex.: 12345/MT" />
           </div>
         </div>
-        <button className="btn-primary" disabled={busy}>{busy && <Spinner />} Solicitar verificação</button>
+        <ProPlanPicker planKey={planKey} setPlanKey={setPlanKey} selected={proModules} setSelected={setProModules} />
+        <p className="text-xs text-stone-500">O plano profissional é liberado após o pagamento (online em breve) e a verificação do seu registro.</p>
+        <button className="btn-primary" disabled={busy}>{busy && <Spinner />} Solicitar plano profissional</button>
       </form>
+    </div>
+  )
+}
+
+function PlanCard() {
+  const { proPlan } = useAuth()
+  const [mods, setMods] = useState<Record<string, string>>({})
+  useEffect(() => { supabase.from('modules').select('key, name').then(({ data }) => setMods(Object.fromEntries((data ?? []).map((m) => [m.key, m.name])))) }, [])
+  if (!proPlan) return <Alert kind="info">Você ainda não tem um plano profissional. Fale com o suporte para contratar.</Alert>
+  const pct = Math.min(100, Math.round((proPlan.seats_used / Math.max(1, proPlan.seats)) * 100))
+  return (
+    <div className="card">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div><div className="text-sm text-stone-500">Seu plano</div><div className="font-display text-xl font-semibold">{proPlan.plan_name}</div></div>
+        <span className={`badge ${proPlan.status === 'active' ? 'bg-brand-100 text-brand-800 dark:bg-brand-900 dark:text-brand-200' : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'}`}>{STATUS_LABEL[proPlan.status]}</span>
+      </div>
+      <div className="mt-4 text-sm">Clientes: <strong>{proPlan.seats_used}</strong> de {proPlan.seats}</div>
+      <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-stone-200 dark:bg-stone-800"><div className="h-full rounded-full bg-brand-600" style={{ width: `${pct}%` }} /></div>
+      <div className="mt-4 text-sm text-stone-500">Módulos de gestão: {proPlan.pro_modules.map((k) => mods[k] ?? k).join(', ') || 'nenhum'}</div>
+      {proPlan.status !== 'active' && <p className="mt-3 text-xs text-amber-700 dark:text-amber-300">Seu plano será liberado após a confirmação do pagamento.</p>}
     </div>
   )
 }
@@ -115,6 +143,7 @@ export function ProDashboardPage() {
     <div>
       <PageHeader title={pro?.public_name ?? 'Painel profissional'} subtitle="Seus clientes e autorizações." />
       {!pro?.approved_at && <div className="mb-6"><PendingApproval /></div>}
+      <div className="mb-6"><PlanCard /></div>
       <div className="grid gap-3 sm:grid-cols-3">
         <Stat label="Clientes ativos" value={counts.active} />
         <Stat label="Convites pendentes" value={counts.invited} />
@@ -137,6 +166,10 @@ export function ProClientsPage() {
   const [rows, setRows] = useState<ClientRow[] | null>(null)
   const [modules, setModules] = useState<Module[]>([])
   const [email, setEmail] = useState('')
+  const [clientName, setClientName] = useState('')
+  const [link, setLink] = useState('')
+  const [linkName, setLinkName] = useState('')
+  const { proPlan, refresh } = useAuth()
   const [msg, setMsg] = useState<{ kind: 'error' | 'success'; text: string } | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -157,13 +190,18 @@ export function ProClientsPage() {
 
   async function invite(e: FormEvent) {
     e.preventDefault()
-    setBusy(true); setMsg(null)
-    const { error } = await supabase.rpc('invite_client', { _email: email })
+    setBusy(true); setMsg(null); setLink('')
+    const { data, error } = await supabase.functions.invoke('manage-users', { body: { mode: 'professional', email, full_name: clientName } })
     setBusy(false)
-    if (error) return setMsg({ kind: 'error', text: errorMessage(error) })
-    setEmail('')
-    setMsg({ kind: 'success', text: 'Convite enviado. O cliente verá o convite ao entrar na plataforma.' })
-    void load()
+    if (error) {
+      let detail = errorMessage(error)
+      try { detail = (await (error as { context?: Response }).context?.json())?.error ?? detail } catch { /* sem corpo */ }
+      return setMsg({ kind: 'error', text: detail })
+    }
+    if (data.existed) setMsg({ kind: 'success', text: 'Essa pessoa já tinha conta: o convite aparece para ela em "Meus profissionais".' })
+    else { setLink(data.action_link); setLinkName(clientName) }
+    setEmail(''); setClientName('')
+    void load(); void refresh()
   }
 
   const statusBadge = (s: string) => ({
@@ -175,15 +213,22 @@ export function ProClientsPage() {
   return (
     <div>
       <PageHeader title="Clientes" subtitle="Você só vê os módulos que cada cliente autorizou." />
-      {pro && !pro.approved_at ? <PendingApproval /> : (
-        <form onSubmit={invite} className="card mb-6">
-          <label className="label" htmlFor="ie">Convidar cliente pelo e-mail</label>
-          <div className="flex flex-wrap gap-2">
-            <input id="ie" type="email" className="input max-w-sm flex-1" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="cliente@email.com" required />
-            <button className="btn-primary" disabled={busy}>{busy ? <Spinner /> : <MailPlus className="size-4" />} Convidar</button>
+      {pro && !pro.approved_at ? <PendingApproval /> : proPlan?.status !== 'active' ? (
+        <div className="mb-6"><Alert kind="info">Seu plano profissional ainda não está ativo. Assim que for liberado, você poderá cadastrar clientes.</Alert></div>
+      ) : (
+        <form onSubmit={invite} className="card mb-6 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="font-medium">Cadastrar cliente</div>
+            <span className="text-xs text-stone-500">{proPlan.seats_used} de {proPlan.seats} vagas em uso</span>
           </div>
-          <p className="mt-2 text-xs text-stone-500">O cliente precisa ter conta na plataforma. Convite por e-mail para quem ainda não tem conta chega com o serviço de e-mail transacional.</p>
-          {msg && <div className="mt-3"><Alert kind={msg.kind}>{msg.text}</Alert></div>}
+          <div className="grid gap-2 sm:grid-cols-2">
+            <input className="input" value={clientName} onChange={(e) => setClientName(e.target.value)} placeholder="Nome completo" required />
+            <input type="email" className="input" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="cliente@email.com" required />
+          </div>
+          <button className="btn-primary" disabled={busy || proPlan.seats_used >= proPlan.seats}>{busy ? <Spinner /> : <MailPlus className="size-4" />} Cadastrar</button>
+          <p className="text-xs text-stone-500">O cliente usa todos os módulos pelo seu plano. Você só vê os módulos que contratou e que ele autorizar.</p>
+          {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
+          {link && <AccessLink link={link} name={linkName} />}
         </form>
       )}
 
@@ -259,7 +304,7 @@ export function ProProfilePage() {
 /** Ficha do cliente: o profissional vê, só leitura, os módulos autorizados. */
 export function ProClientDetailPage() {
   const { clientId } = useParams()
-  const { session } = useAuth()
+  const { session, proPlan } = useAuth()
   const [name, setName] = useState<string | null>(null)
   const [link, setLink] = useState<Link | null | undefined>(undefined)
   const [consents, setConsents] = useState<Consent[]>([])
@@ -279,12 +324,15 @@ export function ProClientDetailPage() {
       const cs = ((c.data ?? []) as Consent[]).filter((x) => !x.expires_at || new Date(x.expires_at) > new Date())
       setConsents(cs)
       setModules((m.data ?? []) as Module[])
-      setTab(cs[0]?.module_key ?? null)
+      setTab(cs.find((x) => proPlan?.pro_modules.includes(x.module_key))?.module_key ?? null)
     })
-  }, [clientId, session])
+  }, [clientId, session, proPlan])
 
   if (link === undefined) return <Spinner className="size-6" />
-  const allowed = modules.filter((m) => consents.some((c) => c.module_key === m.key))
+  const contracted = new Set(proPlan?.status === 'active' ? proPlan.pro_modules : [])
+  const consented = modules.filter((m) => consents.some((c) => c.module_key === m.key))
+  const allowed = consented.filter((m) => contracted.has(m.key))
+  const notContracted = consented.filter((m) => !contracted.has(m.key))
   return (
     <div>
       <RouterLink to="/pro/clientes" className="btn-ghost mb-3 !px-2"><ArrowLeft className="size-4" /> Clientes</RouterLink>
@@ -292,7 +340,11 @@ export function ProClientDetailPage() {
       {link?.status !== 'active' ? (
         <Alert kind="info">O cliente precisa aceitar o convite para você ver qualquer informação.</Alert>
       ) : allowed.length === 0 ? (
-        <EmptyState icon={Lock} title="Nenhum módulo autorizado">O cliente ainda não liberou nenhum módulo para você. A autorização é feita por ele, em "Meus profissionais".</EmptyState>
+        <EmptyState icon={Lock} title="Nenhum módulo disponível">
+          {notContracted.length
+            ? `O cliente autorizou ${notContracted.map((m) => m.name).join(', ')}, mas esses módulos não estão no seu plano.`
+            : 'O cliente ainda não liberou nenhum módulo para você. A autorização é feita por ele, em "Meus profissionais".'}
+        </EmptyState>
       ) : (
         <>
           <div className="mb-5 flex flex-wrap gap-1">
@@ -302,7 +354,7 @@ export function ProClientDetailPage() {
               </button>
             ))}
           </div>
-          {tab && MODULES[tab] && <ModulePage key={tab} config={MODULES[tab]} ownerId={clientId} embedded />}
+          {tab && MODULES[tab] && allowed.some((m) => m.key === tab) && <ModulePage key={tab} config={MODULES[tab]} ownerId={clientId} embedded />}
           <p className="mt-6 text-xs text-stone-500">Seu acesso termina na hora em que o cliente revogar a autorização.</p>
         </>
       )}

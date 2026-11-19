@@ -33,7 +33,12 @@ insert into public.user_roles (user_id, role) values ('00000000-0000-0000-0000-0
 
 select test.ok((select count(*) from public.profiles) = 4, 'cadastro cria perfil automaticamente');
 select test.ok((select count(*) from public.organizations where kind = 'personal') = 4, 'cadastro cria organização pessoal');
-select test.ok((select count(*) from public.user_modules where user_id = '00000000-0000-0000-0000-00000000000a') = 3, 'plano gratuito libera 3 módulos');
+select test.ok((select count(*) from public.user_modules where user_id = '00000000-0000-0000-0000-00000000000a' and enabled) = 0, 'Sem assinatura, nenhum módulo liberado');
+-- Assinaturas de teste (como faria o servidor/admin): Ana individual; Bruno e Davi profissionais.
+insert into public.subscriptions (user_id, plan_id, status, source) select '00000000-0000-0000-0000-00000000000a', id, 'active', 'admin' from public.plans where key = 'individual';
+insert into public.subscriptions (user_id, plan_id, status, source, pro_modules) select '00000000-0000-0000-0000-00000000000b', id, 'active', 'admin', '{saude,agenda}' from public.plans where key = 'pro_10';
+insert into public.subscriptions (user_id, plan_id, status, source, pro_modules) select '00000000-0000-0000-0000-00000000000d', id, 'active', 'admin', '{exercicios}' from public.plans where key = 'pro_10';
+select test.ok((select count(*) from public.user_modules where user_id = '00000000-0000-0000-0000-00000000000a' and enabled) = 8, 'Assinatura ativa libera os 8 módulos');
 
 -- ------------------------------------------------------------- Ana
 begin;
@@ -266,5 +271,90 @@ set local role authenticated;
 set local request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000d';
 select test.ok((select count(*) from public.exercise_logs) = 0, 'Revogar autorização some com os dados para o profissional');
 commit;
+
+-- ============================================================ Assinaturas
+-- Cadastro pelo site com plano escolhido: nasce pendente, sem módulos.
+insert into auth.users (id, email, raw_user_meta_data) values
+  ('00000000-0000-0000-0000-0000000000e1', 'eva@teste.com', '{"full_name":"Eva Individual","plan_key":"individual"}'),
+  ('00000000-0000-0000-0000-0000000000f1', 'fabio@teste.com', '{"full_name":"Fábio Nutri","plan_key":"pro_10","public_name":"Fábio Nutricionista","council":"CRN","registration":"123","specialties":["nutricao"],"pro_modules":["nutricao","inexistente"]}');
+select test.ok((select status from public.subscriptions where user_id = '00000000-0000-0000-0000-0000000000e1') = 'pending_payment', 'Cadastro pelo site nasce aguardando pagamento');
+select test.ok((select count(*) from public.user_modules where user_id = '00000000-0000-0000-0000-0000000000e1' and enabled) = 0, 'Assinatura pendente não libera módulos');
+select test.ok(exists (select 1 from public.user_roles where user_id = '00000000-0000-0000-0000-0000000000f1' and role = 'professional')
+  and (select pro_modules from public.subscriptions where user_id = '00000000-0000-0000-0000-0000000000f1') = '{nutricao}', 'Cadastro de profissional guarda módulos válidos do plano');
+
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000e1';
+select test.fails($$insert into public.subscriptions (user_id, plan_id, status) select '00000000-0000-0000-0000-0000000000e1', id, 'active' from public.plans where key = 'individual'$$, 'Usuário não se dá assinatura ativa');
+select test.fails($$update public.subscriptions set status = 'active'$$, 'Usuário não ativa a própria assinatura');
+select test.fails($$select public.admin_set_subscription('00000000-0000-0000-0000-0000000000e1', 'individual', 'active')$$, 'Só admin concede cortesia');
+commit;
+
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000c';
+select public.admin_set_subscription('00000000-0000-0000-0000-0000000000e1', 'individual', 'active', '{}', null, 'Cortesia');
+select public.admin_set_subscription('00000000-0000-0000-0000-0000000000f1', 'pro_10', 'active', '{nutricao}', 1);
+commit;
+select test.ok((select count(*) from public.user_modules where user_id = '00000000-0000-0000-0000-0000000000e1' and enabled) = 8, 'Cortesia do admin libera os módulos');
+select test.ok((select count(*) from public.subscriptions where user_id = '00000000-0000-0000-0000-0000000000e1') = 1, 'Ativar não duplica assinatura');
+
+-- Vagas: Fábio tem 1 vaga.
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000f1';
+select test.ok((select seats from public.my_pro_plan()) = 1, 'Profissional vê o próprio plano e vagas');
+select public.invite_client('eva@teste.com');
+select test.fails($$select public.invite_client('ana@teste.com')$$, 'Sem vaga, não convida mais clientes');
+commit;
+
+-- Eva aceita e libera Nutrição e Finanças; Fábio só contratou Nutrição.
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000e1';
+update public.professional_client_links set status = 'active';
+insert into public.consent_grants (client_id, professional_id, module_key, purpose) values
+  ('00000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-0000000000f1', 'nutricao', 'Plano alimentar'),
+  ('00000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-0000000000f1', 'financas', 'Teste');
+insert into public.food_logs (meal, items) values ('almoço', '{arroz}');
+insert into public.finance_transactions (kind, amount_cents, description) values ('despesa', 1000, 'Mercado');
+commit;
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000f1';
+select test.ok((select count(*) from public.food_logs) = 1, 'Profissional vê módulo contratado e autorizado');
+select test.ok((select count(*) from public.finance_transactions) = 0, 'Profissional não vê módulo fora do plano, mesmo autorizado');
+commit;
+
+-- Cliente patrocinado: Gil entra pelo convite do Bruno e ganha acesso; ao encerrar, perde.
+insert into auth.users (id, email, raw_user_meta_data) values ('00000000-0000-0000-0000-0000000000a1', 'gil@teste.com', '{"full_name":"Gil"}');
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000b';
+select public.invite_client('gil@teste.com');
+commit;
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a1';
+update public.professional_client_links set status = 'active';
+commit;
+select test.ok((select count(*) from public.user_modules where user_id = '00000000-0000-0000-0000-0000000000a1' and enabled) = 8, 'Cliente do profissional ganha os 8 módulos');
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000b';
+select test.ok((select count(*) from public.subscriptions where sponsor_id = '00000000-0000-0000-0000-00000000000b') = 1, 'Profissional vê as assinaturas que patrocina');
+update public.professional_client_links set status = 'ended' where client_id = '00000000-0000-0000-0000-0000000000a1';
+commit;
+select test.ok((select count(*) from public.user_modules where user_id = '00000000-0000-0000-0000-0000000000a1' and enabled) = 0, 'Encerrar vínculo encerra o acesso patrocinado');
+
+-- Usuário existente pede plano profissional: fica pendente e não ganha acesso extra.
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a1';
+select public.request_pro_subscription('pro_30', '{saude,inexistente}');
+select test.ok((select status from public.subscriptions s join public.plans p on p.id = s.plan_id where p.key = 'pro_30') = 'pending_payment', 'Pedido de plano profissional fica aguardando pagamento');
+select test.ok((select pro_modules from public.subscriptions s join public.plans p on p.id = s.plan_id where p.key = 'pro_30') = '{saude}', 'Pedido guarda só módulos válidos');
+commit;
+select test.ok((select count(*) from public.user_modules where user_id = '00000000-0000-0000-0000-0000000000a1' and enabled) = 0, 'Pedido pendente não libera módulos');
 
 \echo 'TODOS OS TESTES PASSARAM'

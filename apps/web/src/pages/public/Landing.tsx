@@ -38,8 +38,8 @@ export function LandingPage() {
           Registre pelo app — e em breve pelo WhatsApp. Compartilhe com seus profissionais só o que quiser, pelo tempo que quiser.
         </p>
         <div className="mt-8 flex flex-wrap gap-3">
-          <Link to="/cadastro" className="btn-primary !px-6 !py-3">Começar grátis</Link>
-          <Link to="/profissionais" className="btn-outline !px-6 !py-3">Sou profissional</Link>
+          <Link to="/cadastro" className="btn-primary !px-6 !py-3">Criar minha conta</Link>
+          <Link to="/cadastro?tipo=profissional" className="btn-outline !px-6 !py-3">Sou profissional da saúde</Link>
         </div>
       </section>
 

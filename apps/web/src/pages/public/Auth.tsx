@@ -1,6 +1,9 @@
-import { Eye, EyeOff, MailCheck } from 'lucide-react'
-import { useState, type FormEvent, type ReactNode } from 'react'
-import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { Briefcase, Eye, EyeOff, MailCheck, User } from 'lucide-react'
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+import { ProPlanPicker, usePlansAndModules } from '../../components/plans'
+import { money } from '../../modules/config'
+import type { Specialty } from '../../lib/types'
 import { Alert, Logo, Spinner } from '../../components/ui'
 import { errorMessage, supabase } from '../../lib/supabase'
 
@@ -16,7 +19,7 @@ function AuthShell({ title, subtitle, children, footer }: { title: string; subti
         <p className="text-sm text-sand-300/60">Dados armazenados no Brasil · LGPD</p>
       </div>
       <div className="flex flex-col items-center justify-center px-5 py-10">
-        <div className="w-full max-w-sm">
+        <div className="w-full max-w-md">
           <Link to="/" className="mb-8 inline-block lg:hidden"><Logo /></Link>
           <h1 className="font-display text-2xl font-semibold">{title}</h1>
           {subtitle && <p className="mt-1 text-sm text-stone-500">{subtitle}</p>}
@@ -101,6 +104,20 @@ export function LoginPage() {
 }
 
 export function SignupPage() {
+  const [params] = useSearchParams()
+  const [accountType, setAccountType] = useState<'individual' | 'professional'>(params.get('tipo') === 'profissional' ? 'professional' : 'individual')
+  const [planKey, setPlanKey] = useState('pro_10')
+  const [proModules, setProModules] = useState<string[]>([])
+  const [publicName, setPublicName] = useState('')
+  const [council, setCouncil] = useState('')
+  const [registration, setRegistration] = useState('')
+  const [specialtyKeys, setSpecialtyKeys] = useState<string[]>([])
+  const [specialties, setSpecialties] = useState<Specialty[]>([])
+  const { plans } = usePlansAndModules()
+  const individual = plans.find((p) => p.key === 'individual')
+  useEffect(() => {
+    supabase.from('specialties').select('*').eq('is_active', true).order('name').then(({ data }) => setSpecialties((data ?? []) as Specialty[]))
+  }, [])
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -113,10 +130,14 @@ export function SignupPage() {
   async function submit(e: FormEvent) {
     e.preventDefault()
     if (!accepted) return setError('É preciso aceitar os termos e a política de privacidade.')
+    if (accountType === 'professional' && proModules.length === 0) return setError('Escolha pelo menos um módulo para gerenciar.')
+    if (accountType === 'professional' && specialtyKeys.length === 0) return setError('Escolha pelo menos uma especialidade.')
     setBusy(true); setError('')
+    const meta: Record<string, unknown> = { full_name: name.trim(), plan_key: accountType === 'professional' ? planKey : 'individual' }
+    if (accountType === 'professional') Object.assign(meta, { pro_modules: proModules, public_name: publicName.trim() || name.trim(), council: council.trim(), registration: registration.trim(), specialties: specialtyKeys })
     const { data, error } = await supabase.auth.signUp({
       email, password,
-      options: { data: { full_name: name.trim() }, emailRedirectTo: `${location.origin}/app` },
+      options: { data: meta, emailRedirectTo: `${location.origin}/app` },
     })
     setBusy(false)
     if (error) return setError(errorMessage(error))
@@ -137,10 +158,20 @@ export function SignupPage() {
   }
 
   return (
-    <AuthShell title="Criar conta" subtitle="Comece no plano gratuito. Sem cartão." footer={<>Já tem conta? <Link to="/entrar" className="font-medium text-brand-700 dark:text-brand-300">Entrar</Link></>}>
+    <AuthShell title="Criar conta" subtitle="Escolha como você vai usar a plataforma." footer={<>Já tem conta? <Link to="/entrar" className="font-medium text-brand-700 dark:text-brand-300">Entrar</Link></>}>
       <GoogleButton onError={setError} />
       <form onSubmit={submit} className="space-y-4">
         {error && <Alert>{error}</Alert>}
+        <div className="grid grid-cols-2 gap-2">
+          {([['individual', User, 'Para mim', individual?.price_monthly_cents != null ? `${money(individual.price_monthly_cents)}/mês` : 'Plano Individual'], ['professional', Briefcase, 'Sou profissional da saúde', 'Planos por nº de clientes']] as const).map(([k, Icon, t, d]) => (
+            <button type="button" key={k} onClick={() => setAccountType(k)}
+              className={`rounded-xl border p-3 text-left transition ${accountType === k ? 'border-brand-600 bg-brand-50 ring-2 ring-brand-600/20 dark:bg-brand-900/30' : 'border-stone-300 dark:border-stone-700'}`}>
+              <Icon className="size-5 text-brand-700 dark:text-brand-300" />
+              <div className="mt-1.5 text-sm font-medium">{t}</div>
+              <div className="text-xs text-stone-500">{d}</div>
+            </button>
+          ))}
+        </div>
         <div>
           <label className="label" htmlFor="name">Nome completo</label>
           <input id="name" className="input" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" required />
@@ -153,6 +184,32 @@ export function SignupPage() {
           <label className="label" htmlFor="password">Senha <span className="font-normal text-stone-400">(mín. 8 caracteres)</span></label>
           <PasswordInput id="password" value={password} onChange={setPassword} autoComplete="new-password" />
         </div>
+        {accountType === 'professional' && (
+          <div className="space-y-4 rounded-2xl border border-stone-200 p-4 dark:border-stone-800">
+            <div>
+              <label className="label" htmlFor="pub">Nome profissional</label>
+              <input id="pub" className="input" value={publicName} onChange={(e) => setPublicName(e.target.value)} placeholder="Ex.: Dra. Ana Souza" />
+            </div>
+            <div>
+              <span className="label">Especialidades</span>
+              <div className="flex flex-wrap gap-2">
+                {specialties.map((s) => {
+                  const on = specialtyKeys.includes(s.key)
+                  return (
+                    <button type="button" key={s.key} onClick={() => setSpecialtyKeys((x) => on ? x.filter((i) => i !== s.key) : [...x, s.key])}
+                      className={`badge border !px-3 !py-1.5 ${on ? 'border-brand-600 bg-brand-700 text-white' : 'border-stone-300 text-stone-700 dark:border-stone-700 dark:text-stone-300'}`}>{s.name}</button>
+                  )
+                })}
+              </div>
+            </div>
+            <div className="grid grid-cols-[110px_1fr] gap-3">
+              <div><label className="label" htmlFor="co">Conselho</label><input id="co" className="input" value={council} onChange={(e) => setCouncil(e.target.value)} placeholder="CRM, CRN…" /></div>
+              <div><label className="label" htmlFor="rg">Nº de registro</label><input id="rg" className="input" value={registration} onChange={(e) => setRegistration(e.target.value)} /></div>
+            </div>
+            <ProPlanPicker planKey={planKey} setPlanKey={setPlanKey} selected={proModules} setSelected={setProModules} />
+          </div>
+        )}
+        <p className="text-xs text-stone-500">O acesso é liberado após a confirmação do pagamento. O pagamento online estará disponível em breve; até lá, nossa equipe ativa sua conta.</p>
         <label className="flex items-start gap-2.5 text-sm text-stone-600 dark:text-stone-400">
           <input type="checkbox" className="mt-0.5 size-4 accent-brand-700" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} />
           <span>Li e aceito os <Link to="/termos" className="underline">termos de uso</Link> e a <Link to="/privacidade" className="underline">política de privacidade</Link>.</span>
@@ -197,6 +254,7 @@ export function ForgotPasswordPage() {
 }
 
 export function ResetPasswordPage() {
+  const welcome = useSearchParams()[0].has('boas-vindas')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -212,7 +270,7 @@ export function ResetPasswordPage() {
   }
 
   return (
-    <AuthShell title="Nova senha">
+    <AuthShell title={welcome ? 'Bem-vindo! Crie sua senha' : 'Nova senha'} subtitle={welcome ? 'Sua conta já foi criada. Defina uma senha para entrar nas próximas vezes.' : undefined}>
       <form onSubmit={submit} className="space-y-4">
         {error && <Alert>{error}</Alert>}
         <div>
