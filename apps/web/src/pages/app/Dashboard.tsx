@@ -1,4 +1,4 @@
-import { ArrowRight, Inbox, MessageCircle, ShieldCheck, Users } from 'lucide-react'
+import { ArrowRight, Inbox, MessageCircle, ShieldCheck, Sparkles, Users } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthProvider'
@@ -14,6 +14,7 @@ export function DashboardPage() {
   const { profile, modules, session } = useAuth()
   const [pendingInvites, setPendingInvites] = useState(0)
   const [hasWhatsapp, setHasWhatsapp] = useState<boolean | null>(null)
+  const [pendingDrafts, setPendingDrafts] = useState(0)
 
   useEffect(() => {
     const uid = session!.user.id
@@ -23,12 +24,20 @@ export function DashboardPage() {
     supabase.from('whatsapp_identities').select('id', { count: 'exact', head: true })
       .eq('user_id', uid)
       .then(({ count }) => setHasWhatsapp((count ?? 0) > 0))
+    supabase.from('assistant_drafts').select('id', { count: 'exact', head: true })
+      .eq('status', 'pending')
+      .then(({ count }) => setPendingDrafts(count ?? 0))
   }, [session])
 
   return (
     <div>
       <PageHeader title={`${greeting()}, ${profile?.display_name ?? ''}`} subtitle="Este é o seu painel. Os módulos ganham vida conforme as fases de desenvolvimento." />
 
+      <Link to="/app/assistente" className="card mb-3 flex items-center gap-3 !border-brand-700 !bg-brand-700 text-white dark:!bg-brand-800">
+        <Sparkles className="size-5" />
+        <span className="flex-1 text-sm">Registre algo em uma frase — gasto, treino, compromisso, ideia…</span>
+        <ArrowRight className="size-4" />
+      </Link>
       <div className="space-y-3">
         {pendingInvites > 0 && (
           <Link to="/app/profissionais" className="card flex items-center gap-3 !border-brand-300 !bg-brand-50 dark:!border-brand-800 dark:!bg-brand-900/30">
@@ -51,7 +60,7 @@ export function DashboardPage() {
         <Link to="/app/caixa-de-entrada" className="card group !p-4 transition hover:border-brand-300">
           <Inbox className="size-5 text-brand-600 dark:text-brand-400" />
           <div className="mt-3 font-medium">Caixa de entrada</div>
-          <div className="mt-0.5 text-xs text-stone-500">Fase 2 · assistente central</div>
+          <div className="mt-0.5 text-xs text-stone-500">{pendingDrafts ? `${pendingDrafts} para confirmar` : 'Tudo em dia'}</div>
         </Link>
         {modules.map((m) => {
           const Icon = MODULE_ICONS[m.key]

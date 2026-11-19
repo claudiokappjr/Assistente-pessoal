@@ -6,6 +6,7 @@ import { Alert, ComingSoon } from './components/ui'
 import { supabaseConfigured } from './lib/supabase'
 import { AdminAuditPage, AdminCatalogPage, AdminDashboardPage, AdminIntegrationsPage, AdminUsersPage } from './pages/admin/Admin'
 import { DashboardPage } from './pages/app/Dashboard'
+import { AssistantPage, InboxPage } from './pages/app/Inbox'
 import { MyProfessionalsPage } from './pages/app/Professionals'
 import { SettingsPage } from './pages/app/Settings'
 import { BecomeProfessionalPage, ProClientsPage, ProDashboardPage, ProProfilePage } from './pages/pro/Pro'
@@ -46,8 +47,8 @@ export default function App() {
 
           <Route path="/app" element={<RequireAuth><AppLayout area="app" /></RequireAuth>}>
             <Route index element={<DashboardPage />} />
-            <Route path="caixa-de-entrada" element={<ComingSoon title="Caixa de entrada" phase={2}>Aqui chegarão as mensagens enviadas pelo app e pelo WhatsApp, já classificadas pela IA e aguardando sua confirmação.</ComingSoon>} />
-            <Route path="assistente" element={<ComingSoon title="Assistente" phase={2}>O assistente vai receber texto, áudio, fotos e documentos e propor registros nos módulos certos.</ComingSoon>} />
+            <Route path="caixa-de-entrada" element={<InboxPage />} />
+            <Route path="assistente" element={<AssistantPage />} />
             {MODULE_PAGES.map((m) => <Route key={m.path} path={m.path} element={<ComingSoon title={m.title} phase={m.phase} />} />)}
             <Route path="profissionais" element={<MyProfessionalsPage />} />
             <Route path="configuracoes" element={<SettingsPage />} />

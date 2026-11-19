@@ -24,9 +24,11 @@ export function AdminDashboardPage() {
           <Stat label="Aguardando aprovação" value={stats.profissionais_pendentes} />
           <Stat label="Vínculos ativos" value={stats.vinculos_ativos} />
           <Stat label="Autorizações ativas" value={stats.consentimentos_ativos} />
+          <Stat label="Mensagens no mês" value={stats.mensagens_mes ?? 0} hint="Só a contagem; o conteúdo é privado" />
+          <Stat label="Falhas no mês" value={stats.mensagens_falha_mes ?? 0} />
         </div>
       )}
-      <p className="mt-6 text-sm text-stone-500">Receita, assinaturas e mensagens processadas entram com as Fases 2 e 3.</p>
+      <p className="mt-6 text-sm text-stone-500">Receita e assinaturas entram com a Fase 3.</p>
     </div>
   )
 }
@@ -150,7 +152,7 @@ export function AdminIntegrationsPage() {
     { name: 'Supabase (banco, login, arquivos)', status: 'Conectado', ok: true, note: 'Projeto em São Paulo (sa-east-1).' },
     { name: 'Login com Google', status: 'Não configurado', ok: false, note: 'Requer projeto no Google Cloud e ativação em Authentication › Providers.' },
     { name: 'WhatsApp Cloud API (Meta)', status: 'Não configurado', ok: false, note: 'Fase 2. Requer Meta Business verificado e número dedicado.' },
-    { name: 'Provedor de IA', status: 'Não configurado', ok: false, note: 'Fase 2. Chave ficará só no servidor (Edge Functions).' },
+    { name: 'IA — Claude (Anthropic)', status: 'Função publicada', ok: true, note: 'Edge Function assistant-process. A chave ANTHROPIC_API_KEY fica só nos Secrets do Supabase; falhas aparecem nos indicadores.' },
     { name: 'Gateway de pagamento', status: 'Não configurado', ok: false, note: 'Fase 3. Cartão recorrente e Pix.' },
     { name: 'Google Agenda', status: 'Não configurado', ok: false, note: 'Fase 3. OAuth por usuário.' },
     { name: 'E-mail transacional', status: 'Padrão do Supabase', ok: false, note: 'Limite baixo de envios. Configurar SMTP próprio antes do lançamento.' },

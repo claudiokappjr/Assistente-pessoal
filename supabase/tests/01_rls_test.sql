@@ -154,4 +154,48 @@ select test.fails($$delete from public.audit_logs$$, 'Nem o admin apaga auditori
 select test.fails($$update public.audit_logs set action = 'x'$$, 'Nem o admin edita auditoria');
 commit;
 
+-- ============================================================ Fase 2: assistente
+-- O servidor (Edge Function) grava a mensagem e os rascunhos.
+insert into public.assistant_messages (id, owner_id, content_text, status, intent)
+values ('10000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-00000000000a',
+        'Paguei R$ 120 na academia e fiz 40 min de musculação', 'processed', 'registro');
+insert into public.assistant_drafts (id, owner_id, message_id, module_key, kind, title, data, confidence) values
+  ('20000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-00000000000a', '10000000-0000-0000-0000-000000000001', 'financas', 'despesa', 'Academia', '{"valor":120}', 0.95),
+  ('20000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-00000000000a', '10000000-0000-0000-0000-000000000001', 'exercicios', 'exercicio', 'Musculação', '{"minutos":40}', 0.9);
+
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+select test.ok((select count(*) from public.assistant_drafts) = 2, 'Ana vê os próprios rascunhos');
+select test.fails($$insert into public.assistant_messages (owner_id, content_text) values ('00000000-0000-0000-0000-00000000000a', 'x')$$, 'Usuário não grava mensagem direto (só pelo servidor)');
+select test.fails($$insert into public.assistant_drafts (owner_id, message_id, kind, title) values ('00000000-0000-0000-0000-00000000000a', '10000000-0000-0000-0000-000000000001', 'x', 'x')$$, 'Usuário não cria rascunho direto');
+update public.assistant_drafts set data = '{"valor":125}', status = 'confirmed' where id = '20000000-0000-0000-0000-000000000001';
+select test.ok((select decided_at is not null from public.assistant_drafts where id = '20000000-0000-0000-0000-000000000001'), 'Ana corrige e confirma rascunho');
+select test.fails($$update public.assistant_drafts set status = 'rejected' where id = '20000000-0000-0000-0000-000000000001'$$, 'Rascunho decidido não muda mais');
+select test.fails($$update public.assistant_drafts set owner_id = '00000000-0000-0000-0000-00000000000d' where id = '20000000-0000-0000-0000-000000000002'$$, 'Rascunho não muda de dono');
+commit;
+
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000d';
+select test.ok((select count(*) from public.assistant_messages) = 0, 'Estranho não vê mensagens alheias');
+select test.ok((select count(*) from public.assistant_drafts) = 0, 'Estranho não vê rascunhos alheios');
+update public.assistant_drafts set status = 'rejected';
+commit;
+select test.ok((select status from public.assistant_drafts where id = '20000000-0000-0000-0000-000000000002') = 'pending', 'Estranho não decide rascunho alheio');
+
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000b';
+select test.ok((select count(*) from public.assistant_messages) = 0, 'Profissional não vê mensagens do cliente');
+commit;
+
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000c';
+select test.ok((select count(*) from public.assistant_messages) = 0, 'Admin não lê conteúdo das mensagens');
+select test.ok((select count(*) from public.assistant_drafts) = 0, 'Admin não lê rascunhos');
+select test.ok((select (public.admin_stats() ->> 'mensagens_mes')::int) = 1, 'Admin vê só a contagem de mensagens');
+commit;
+
 \echo 'TODOS OS TESTES PASSARAM'
