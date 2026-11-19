@@ -198,4 +198,73 @@ select test.ok((select count(*) from public.assistant_drafts) = 0, 'Admin não l
 select test.ok((select (public.admin_stats() ->> 'mensagens_mes')::int) = 1, 'Admin vê só a contagem de mensagens');
 commit;
 
+-- ============================================================ Módulos v1
+-- Rascunho já confirmado pela Ana (financas) virou lançamento.
+select test.ok((select count(*) from public.finance_transactions where source_draft_id = '20000000-0000-0000-0000-000000000001') = 1, 'Rascunho confirmado vira lançamento em Finanças');
+select test.ok(private.try_time('14h30') = '14:30'::time and private.try_time('9h') = '09:00'::time and private.try_date('25/12/2026') = '2026-12-25', 'Conversões de hora e data');
+
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+update public.assistant_drafts set status = 'confirmed' where id = '20000000-0000-0000-0000-000000000002';
+select test.ok((select count(*) from public.exercise_logs) = 1, 'Treino confirmado aparece em Exercícios');
+insert into public.health_entries (kind, description, intensity) values ('sintoma', 'Dor de cabeça', 4);
+select test.ok((select owner_id from public.health_entries) = '00000000-0000-0000-0000-00000000000a', 'Registro manual assume o dono automaticamente');
+select test.fails($$insert into public.finance_transactions (owner_id, kind, amount_cents, description) values ('00000000-0000-0000-0000-00000000000d', 'despesa', 100, 'x')$$, 'Não grava registro em nome de outro');
+commit;
+
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000d';
+select test.ok((select count(*) from public.finance_transactions) = 0, 'Estranho não vê finanças alheias');
+select test.ok((select count(*) from public.health_entries) = 0, 'Estranho não vê saúde alheia');
+update public.health_entries set description = 'hack';
+delete from public.exercise_logs;
+commit;
+select test.ok((select description from public.health_entries) = 'Dor de cabeça' and (select count(*) from public.exercise_logs) = 1, 'Estranho não altera nem apaga dados alheios');
+
+-- Davi vira profissional aprovado, Ana autoriza só Exercícios.
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000d';
+select public.become_professional('Davi Personal', 'CREF', '999', array(select id from public.specialties where key = 'educacao_fisica'));
+commit;
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000c';
+select public.admin_approve_professional('00000000-0000-0000-0000-00000000000d', true);
+select test.ok((select count(*) from public.finance_transactions) = 0 and (select count(*) from public.health_entries) = 0, 'Admin não vê conteúdo dos módulos');
+commit;
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000d';
+select public.invite_client('ana@teste.com');
+commit;
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+update public.professional_client_links set status = 'active' where professional_id = '00000000-0000-0000-0000-00000000000d';
+insert into public.consent_grants (client_id, professional_id, module_key, purpose)
+values ('00000000-0000-0000-0000-00000000000a', '00000000-0000-0000-0000-00000000000d', 'exercicios', 'Acompanhamento de treino');
+commit;
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000d';
+select test.ok((select count(*) from public.exercise_logs) = 1, 'Profissional autorizado vê Exercícios do cliente');
+select test.ok((select count(*) from public.finance_transactions) = 0 and (select count(*) from public.health_entries) = 0, 'Profissional não vê módulos não autorizados');
+update public.exercise_logs set activity = 'alterado';
+commit;
+select test.ok((select activity from public.exercise_logs) <> 'alterado', 'Profissional só lê, não altera');
+
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+update public.consent_grants set revoked_at = now() where professional_id = '00000000-0000-0000-0000-00000000000d' and revoked_at is null;
+commit;
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000d';
+select test.ok((select count(*) from public.exercise_logs) = 0, 'Revogar autorização some com os dados para o profissional');
+commit;
+
 \echo 'TODOS OS TESTES PASSARAM'

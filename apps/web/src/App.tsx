@@ -7,22 +7,14 @@ import { supabaseConfigured } from './lib/supabase'
 import { AdminAuditPage, AdminCatalogPage, AdminDashboardPage, AdminIntegrationsPage, AdminUsersPage } from './pages/admin/Admin'
 import { DashboardPage } from './pages/app/Dashboard'
 import { AssistantPage, InboxPage } from './pages/app/Inbox'
+import { MODULES } from './modules/config'
+import { ModulePage } from './modules/ModulePage'
 import { MyProfessionalsPage } from './pages/app/Professionals'
 import { SettingsPage } from './pages/app/Settings'
-import { BecomeProfessionalPage, ProClientsPage, ProDashboardPage, ProProfilePage } from './pages/pro/Pro'
+import { BecomeProfessionalPage, ProClientDetailPage, ProClientsPage, ProDashboardPage, ProProfilePage } from './pages/pro/Pro'
 import { ForgotPasswordPage, LoginPage, ResetPasswordPage, SignupPage } from './pages/public/Auth'
 import { LandingPage, LegalPage, ProfessionalsCatalogPage } from './pages/public/Landing'
 
-const MODULE_PAGES: { path: string; title: string; phase: number }[] = [
-  { path: 'agenda', title: 'Agenda', phase: 3 },
-  { path: 'financas', title: 'Finanças', phase: 3 },
-  { path: 'saude', title: 'Saúde', phase: 4 },
-  { path: 'psicanalise', title: 'Psicanálise', phase: 4 },
-  { path: 'nutricao', title: 'Nutrição', phase: 5 },
-  { path: 'exercicios', title: 'Exercícios', phase: 5 },
-  { path: 'ciclo', title: 'Ciclo menstrual', phase: 5 },
-  { path: 'memorias', title: 'Insights e memórias', phase: 6 },
-]
 
 export default function App() {
   if (!supabaseConfigured) {
@@ -49,7 +41,7 @@ export default function App() {
             <Route index element={<DashboardPage />} />
             <Route path="caixa-de-entrada" element={<InboxPage />} />
             <Route path="assistente" element={<AssistantPage />} />
-            {MODULE_PAGES.map((m) => <Route key={m.path} path={m.path} element={<ComingSoon title={m.title} phase={m.phase} />} />)}
+            {Object.values(MODULES).map((m) => <Route key={m.key} path={m.key} element={<ModulePage key={m.key} config={m} />} />)}
             <Route path="profissionais" element={<MyProfessionalsPage />} />
             <Route path="configuracoes" element={<SettingsPage />} />
             <Route path="sou-profissional" element={<BecomeProfessionalPage />} />
@@ -58,6 +50,7 @@ export default function App() {
           <Route path="/pro" element={<RequireAuth role="professional"><AppLayout area="pro" /></RequireAuth>}>
             <Route index element={<ProDashboardPage />} />
             <Route path="clientes" element={<ProClientsPage />} />
+            <Route path="clientes/:clientId" element={<ProClientDetailPage />} />
             <Route path="agenda" element={<ComingSoon title="Agenda profissional" phase={3} />} />
             <Route path="perfil" element={<ProProfilePage />} />
           </Route>

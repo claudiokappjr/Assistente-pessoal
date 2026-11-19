@@ -7,8 +7,6 @@ import { PageHeader } from '../../components/ui'
 import { greeting } from '../../lib/format'
 import { supabase } from '../../lib/supabase'
 
-// Fase em que cada módulo ganha funcionalidade real (para não exibir dados fictícios).
-const PHASE: Record<string, number> = { agenda: 3, financas: 3, saude: 4, psicanalise: 4, nutricao: 5, exercicios: 5, ciclo: 5, memorias: 6 }
 
 export function DashboardPage() {
   const { profile, modules, session } = useAuth()
@@ -31,7 +29,7 @@ export function DashboardPage() {
 
   return (
     <div>
-      <PageHeader title={`${greeting()}, ${profile?.display_name ?? ''}`} subtitle="Este é o seu painel. Os módulos ganham vida conforme as fases de desenvolvimento." />
+      <PageHeader title={`${greeting()}, ${profile?.display_name ?? ''}`} subtitle="Tudo o que você registra, organizado por área." />
 
       <Link to="/app/assistente" className="card mb-3 flex items-center gap-3 !border-brand-700 !bg-brand-700 text-white dark:!bg-brand-800">
         <Sparkles className="size-5" />
@@ -71,13 +69,13 @@ export function DashboardPage() {
                 {m.is_sensitive && <ShieldCheck className="size-4 text-stone-400" aria-label="Dado sensível" />}
               </div>
               <div className="mt-3 font-medium">{m.name}</div>
-              <div className="mt-0.5 text-xs text-stone-500">Fase {PHASE[m.key]} · em construção</div>
+              <div className="mt-0.5 line-clamp-2 text-xs text-stone-500">{m.description}</div>
             </Link>
           )
         })}
       </div>
       {modules.length < 8 && (
-        <p className="mt-4 text-sm text-stone-500">Seu plano libera {modules.length} de 8 módulos. Planos pagos chegam com o módulo de assinaturas (Fase 3).</p>
+        <p className="mt-4 text-sm text-stone-500">Seu plano libera {modules.length} de 8 módulos. Planos pagos chegam com o módulo de assinaturas.</p>
       )}
     </div>
   )

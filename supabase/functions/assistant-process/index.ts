@@ -10,7 +10,9 @@ import { createClient } from 'npm:@supabase/supabase-js@2'
 // Haiku classifica (barato e rápido); Sonnet revisa só quando há dúvida.
 const MODEL = Deno.env.get('ANTHROPIC_MODEL') ?? 'claude-haiku-5-5'
 const FALLBACK_MODEL = Deno.env.get('ANTHROPIC_FALLBACK_MODEL') ?? 'claude-sonnet-5-5'
-const ESCALATE_BELOW = 0.7
+// Só chama o modelo maior quando a confiança é baixa de verdade. Dúvidas
+// pequenas (ex.: forma de pagamento) ficam marcadas para o usuário revisar.
+const ESCALATE_BELOW = 0.6
 const FREE_MONTHLY_LIMIT_FALLBACK = 50
 const MAX_TEXT = 4000
 
@@ -149,7 +151,7 @@ async function callClaude(apiKey: string, model: string, system: string, text: s
 
 function needsReview(r: ClaudeResult) {
   if (r.intent === 'registro' && (!r.items || r.items.length === 0)) return true
-  return (r.items ?? []).some((i) => (Number(i.confidence) || 0) < ESCALATE_BELOW || (i.ambiguity ?? '').trim() !== '')
+  return (r.items ?? []).some((i) => (Number(i.confidence) || 0) < ESCALATE_BELOW)
 }
 
 Deno.serve(async (req) => {

@@ -35,7 +35,7 @@ Requer Postgres 15+ local.
 PGHOST=localhost PGUSER=postgres ./supabase/tests/run_local.sh
 ```
 
-Os 53 testes cobrem: usuário só vê os próprios dados; profissional precisa de aprovação do admin; profissional só acessa módulo com consentimento ativo do cliente; revogação e encerramento de vínculo cortam o acesso na hora; administrador não se auto-remove; auditoria é imutável.
+Os 66 testes cobrem: usuário só vê os próprios dados; profissional precisa de aprovação do admin; profissional só acessa módulo com consentimento ativo do cliente; revogação e encerramento de vínculo cortam o acesso na hora; administrador não se auto-remove; auditoria é imutável.
 
 ## Status por fase
 
@@ -43,7 +43,7 @@ Os 53 testes cobrem: usuário só vê os próprios dados; profissional precisa d
 | --- | --- | --- |
 | 1 | Autenticação, perfis, papéis, organizações, módulos, planos, consentimentos, auditoria, painéis | Concluída |
 | 2 | Assistente central, caixa de entrada, WhatsApp | Em andamento (app pronto; WhatsApp pendente) |
-| 3 | Agendas, finanças, assinaturas | Não iniciada |
+| 3 | Agendas, finanças, assinaturas | Em andamento (módulos v1 prontos; assinaturas pendentes) |
 | 4 | Saúde, psicanálise, revisão profissional | Não iniciada |
 | 5 | Nutrição, exercícios, ciclo | Não iniciada |
 | 6 | Memórias, correlações, automações | Não iniciada |

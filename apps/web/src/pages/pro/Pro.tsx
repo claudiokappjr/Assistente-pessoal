@@ -1,11 +1,13 @@
-import { Clock, MailPlus, Users } from 'lucide-react'
+import { ArrowLeft, ChevronRight, Clock, Lock, MailPlus, Users } from 'lucide-react'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link as RouterLink, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthProvider'
 import { Alert, EmptyState, PageHeader, Spinner, Stat } from '../../components/ui'
 import { formatDate } from '../../lib/format'
 import { errorMessage, supabase } from '../../lib/supabase'
 import type { Consent, Link, Module, ProfessionalProfile, Profile, Specialty } from '../../lib/types'
+import { MODULES } from '../../modules/config'
+import { ModulePage } from '../../modules/ModulePage'
 
 function useProfessional() {
   const { session } = useAuth()
@@ -188,7 +190,7 @@ export function ProClientsPage() {
       {rows?.length === 0 && <EmptyState icon={Users} title="Nenhum cliente ainda">Convide seu primeiro cliente pelo e-mail.</EmptyState>}
       <div className="overflow-hidden rounded-2xl border border-stone-200 bg-white dark:border-stone-800 dark:bg-stone-900">
         {rows?.map((r) => (
-          <div key={r.id} className="flex flex-wrap items-center gap-3 border-b border-stone-100 px-4 py-3 last:border-0 dark:border-stone-800">
+          <RouterLink to={`/pro/clientes/${r.client_id}`} key={r.id} className="flex flex-wrap items-center gap-3 border-b border-stone-100 px-4 py-3 last:border-0 hover:bg-stone-50 dark:border-stone-800 dark:hover:bg-stone-800/50">
             <div className="min-w-0 flex-1">
               <div className="font-medium">{r.profile?.full_name ?? 'Cliente'}</div>
               <div className="text-xs text-stone-500">
@@ -197,7 +199,8 @@ export function ProClientsPage() {
               </div>
             </div>
             {statusBadge(r.status)}
-          </div>
+            <ChevronRight className="size-4 text-stone-400" />
+          </RouterLink>
         ))}
       </div>
     </div>
@@ -249,6 +252,60 @@ export function ProProfilePage() {
           {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
         </div>
       </form>
+    </div>
+  )
+}
+
+/** Ficha do cliente: o profissional vê, só leitura, os módulos autorizados. */
+export function ProClientDetailPage() {
+  const { clientId } = useParams()
+  const { session } = useAuth()
+  const [name, setName] = useState<string | null>(null)
+  const [link, setLink] = useState<Link | null | undefined>(undefined)
+  const [consents, setConsents] = useState<Consent[]>([])
+  const [modules, setModules] = useState<Module[]>([])
+  const [tab, setTab] = useState<string | null>(null)
+
+  useEffect(() => {
+    const uid = session!.user.id
+    Promise.all([
+      supabase.from('profiles').select('full_name').eq('id', clientId!).maybeSingle(),
+      supabase.from('professional_client_links').select('*').eq('professional_id', uid).eq('client_id', clientId!).maybeSingle(),
+      supabase.from('consent_grants').select('*').eq('professional_id', uid).eq('client_id', clientId!).is('revoked_at', null),
+      supabase.from('modules').select('*').order('sort_order'),
+    ]).then(([p, l, c, m]) => {
+      setName((p.data as { full_name: string } | null)?.full_name ?? 'Cliente')
+      setLink(l.data as Link | null)
+      const cs = ((c.data ?? []) as Consent[]).filter((x) => !x.expires_at || new Date(x.expires_at) > new Date())
+      setConsents(cs)
+      setModules((m.data ?? []) as Module[])
+      setTab(cs[0]?.module_key ?? null)
+    })
+  }, [clientId, session])
+
+  if (link === undefined) return <Spinner className="size-6" />
+  const allowed = modules.filter((m) => consents.some((c) => c.module_key === m.key))
+  return (
+    <div>
+      <RouterLink to="/pro/clientes" className="btn-ghost mb-3 !px-2"><ArrowLeft className="size-4" /> Clientes</RouterLink>
+      <PageHeader title={name ?? 'Cliente'} subtitle={link?.status === 'active' ? `Cliente desde ${formatDate(link.accepted_at)} · somente leitura` : 'Vínculo não está ativo'} />
+      {link?.status !== 'active' ? (
+        <Alert kind="info">O cliente precisa aceitar o convite para você ver qualquer informação.</Alert>
+      ) : allowed.length === 0 ? (
+        <EmptyState icon={Lock} title="Nenhum módulo autorizado">O cliente ainda não liberou nenhum módulo para você. A autorização é feita por ele, em "Meus profissionais".</EmptyState>
+      ) : (
+        <>
+          <div className="mb-5 flex flex-wrap gap-1">
+            {allowed.map((m) => (
+              <button key={m.key} onClick={() => setTab(m.key)} className={`rounded-lg px-3 py-1.5 text-sm font-medium ${tab === m.key ? 'bg-stone-900 text-white dark:bg-stone-100 dark:text-stone-900' : 'text-stone-600 hover:bg-stone-200/60 dark:text-stone-400 dark:hover:bg-stone-800'}`}>
+                {m.name}
+              </button>
+            ))}
+          </div>
+          {tab && MODULES[tab] && <ModulePage key={tab} config={MODULES[tab]} ownerId={clientId} embedded />}
+          <p className="mt-6 text-xs text-stone-500">Seu acesso termina na hora em que o cliente revogar a autorização.</p>
+        </>
+      )}
     </div>
   )
 }

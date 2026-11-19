@@ -222,7 +222,7 @@ export function InboxPage() {
       <PageHeader title="Caixa de entrada" subtitle="Escreva como falaria com alguém. A IA organiza, você confirma." />
       <Composer onSent={() => void load()} />
       <p className="mt-2 text-xs text-stone-500">
-        Módulos ativos no seu plano: {modules.map((m) => m.name).join(', ') || '—'}. Os registros confirmados ficam guardados aqui e passam automaticamente para cada módulo quando ele for lançado.
+        Módulos ativos no seu plano: {modules.map((m) => m.name).join(', ') || '—'}. Cada registro confirmado vai direto para o módulo correspondente.
       </p>
 
       <div className="mt-8 mb-3 flex items-center gap-1">
