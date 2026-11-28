@@ -1108,10 +1108,10 @@ export function HealthPage({ ownerId, embedded = false }: { ownerId?: string; em
   return (
     <div>
       {!embedded && (
-        <PageHeader title="Saúde" subtitle="Exames, remédios, consultas, escalas por especialidade e diário."
+        <PageHeader title="Saúde e Medicina" subtitle="Exames, remédios, consultas, escalas por especialidade e diário."
           actions={!readOnly && <Link to="/app/assistente" className="btn-outline"><Sparkles className="size-4" /> Pelo assistente</Link>} />
       )}
-      {!readOnly && <PendingDrafts moduleKey="saude" moduleName="Saúde" onDecided={() => setRk((k) => k + 1)} />}
+      {!readOnly && <PendingDrafts moduleKey="saude" moduleName="Saúde e Medicina" onDecided={() => setRk((k) => k + 1)} />}
       <div className="mb-5 grid grid-cols-5 gap-1 rounded-xl bg-stone-200/60 p-1 dark:bg-stone-800">
         {TABS.map((t) => (
           <button key={t.key} onClick={() => setTab(t.key)}

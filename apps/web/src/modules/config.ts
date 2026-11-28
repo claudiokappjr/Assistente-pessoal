@@ -128,7 +128,7 @@ export const MODULES: Record<string, ModuleConfig> = {
     secondary: (r) => join(hhmm(r.logged_time), r.kcal != null && `~${Math.round(Number(r.kcal))} kcal`, r.nutrition_status === 'pendente' && 'calculando…', list(r.items)),
   },
   saude: {
-    key: 'saude', table: 'health_entries', title: 'Saúde', subtitle: 'Diário de sintomas e anotações de saúde.',
+    key: 'saude', table: 'health_entries', title: 'Saúde e Medicina', subtitle: 'Diário de sintomas e anotações de saúde.',
     dateKey: 'occurred_on',
     fields: [
       { key: 'kind', label: 'Tipo', type: 'select', required: true, half: true, options: [{ value: 'sintoma', label: 'Sintoma' }, { value: 'exame', label: 'Anotação' }] },

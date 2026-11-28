@@ -659,4 +659,6 @@ select test.ok(exists (select 1 from public.consent_grants where professional_id
 select test.fails($$update public.consent_requests set status = 'recusado' where id = '80000000-0000-0000-0000-000000000001'$$, 'Pedido respondido não muda mais');
 commit;
 
+select test.ok((select name from public.modules where key = 'saude') = 'Saúde e Medicina', 'Módulo Saúde se chama Saúde e Medicina');
+
 \echo 'TODOS OS TESTES PASSARAM'
