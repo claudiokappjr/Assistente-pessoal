@@ -21,6 +21,7 @@ const EMOTIONS = ['medo', 'angústia', 'tristeza', 'raiva', 'culpa', 'vergonha',
 interface Dream {
   id: string; owner_id: string; kind: 'sonho' | 'insight'; content: string; emotions: string[] | null; themes: string[]
   interpretation: string | null; notes: string | null; occurred_on: string
+  symbols: string[]; ai_status: 'pendente' | 'pronto' | 'falhou' | null; ai_summary: string | null; ai_interpretation: string | null; ai_questions: string[]
 }
 const br = (iso: string) => iso.split('-').reverse().join('/')
 const addMonths = (iso: string, m: number) => { const d = new Date(`${iso}T12:00:00Z`); d.setUTCMonth(d.getUTCMonth() + m); return d.toISOString().slice(0, 10) }
@@ -81,11 +82,12 @@ function DreamForm({ dream, owner, onClose, onSaved }: { dream: Dream | null; ow
           <label className="block"><span className="label">Data</span><input type="date" className="input" value={f.occurred_on} onChange={(e) => setF((x) => ({ ...x, occurred_on: e.target.value }))} /></label>
           <label className="block"><span className="label">Relato do sonho</span>
             <textarea className="input min-h-32" value={f.content} onChange={(e) => setF((x) => ({ ...x, content: e.target.value }))} placeholder="Conte o sonho do jeito que lembrar, com detalhes, pessoas e lugares." /></label>
+          <p className="rounded-xl bg-violet-50 px-3 py-2 text-xs text-violet-900 dark:bg-violet-950/40 dark:text-violet-200"><Sparkles className="mr-1 inline size-3.5" />Ao salvar, a IA lê o relato, sugere uma interpretação e marca os motivos, emoções e elementos principais. Você pode marcar os seus também.</p>
           <div><span className="label">Motivos principais</span><Chips all={DREAM_THEMES} value={themes} onChange={setThemes} placeholder="Outro motivo…" /></div>
           <div><span className="label">Emoções no sonho / ao acordar</span><Chips all={EMOTIONS} value={emotions} onChange={setEmotions} placeholder="Outra emoção…" /></div>
           <label className="block"><span className="label">Associações (o que lembrou, o que aconteceu no dia)</span>
             <textarea className="input min-h-16" value={f.notes} onChange={(e) => setF((x) => ({ ...x, notes: e.target.value }))} /></label>
-          <label className="block"><span className="label">Interpretação</span>
+          <label className="block"><span className="label">Sua interpretação (ou a da sessão)</span>
             <textarea className="input min-h-20" value={f.interpretation} onChange={(e) => setF((x) => ({ ...x, interpretation: e.target.value }))} placeholder="O que você acha que o sonho diz, ou o que foi trabalhado na sessão." /></label>
           {error && <Alert>{error}</Alert>}
           <div className="flex items-center gap-2">
@@ -128,22 +130,35 @@ function DreamsTab({ owner, readOnly }: { owner: string; readOnly: boolean }) {
   const [editing, setEditing] = useState<Dream | 'novo' | null>(null)
   const [openId, setOpenId] = useState<string | null>(null)
   const load = useCallback(async () => {
-    const { data } = await supabase.from('psy_entries').select('id, owner_id, kind, content, emotions, themes, interpretation, notes, occurred_on')
+    const { data } = await supabase.from('psy_entries').select('id, owner_id, kind, content, emotions, themes, interpretation, notes, occurred_on, symbols, ai_status, ai_summary, ai_interpretation, ai_questions')
       .eq('owner_id', owner).eq('kind', 'sonho').order('occurred_on', { ascending: false }).limit(1000)
     setRows((data ?? []) as Dream[])
   }, [owner])
   useEffect(() => { void load() }, [load])
+  // Enquanto a IA interpreta, atualiza sozinho a cada 4 s (por até 2 min).
+  const pending = (rows ?? []).some((r) => r.ai_status === 'pendente')
+  useEffect(() => {
+    if (!pending) return
+    let n = 0
+    const t = setInterval(() => { if (++n > 30) clearInterval(t); else void load() }, 4000)
+    return () => clearInterval(t)
+  }, [pending, load])
+  async function reinterpret(id: string) {
+    setRows((rs) => rs?.map((r) => (r.id === id ? { ...r, ai_status: 'pendente' } : r)) ?? null)
+    await supabase.functions.invoke('dream-interpret', { body: { id } })
+    void load()
+  }
 
   const inPeriod = useMemo(() => {
     const from = period ? addMonths(todayISO(), -period) : '0000'
     return (rows ?? []).filter((r) => r.occurred_on >= from)
   }, [rows, period])
-  const count = (key: 'themes' | 'emotions') => {
+  const count = (key: 'themes' | 'emotions' | 'symbols') => {
     const m = new Map<string, number>()
     inPeriod.forEach((r) => (r[key] ?? []).forEach((t) => m.set(t, (m.get(t) ?? 0) + 1)))
     return [...m.entries()].sort((a, b) => b[1] - a[1])
   }
-  const themes = count('themes'), emotions = count('emotions')
+  const themes = count('themes'), emotions = count('emotions'), symbols = count('symbols')
   const months = useMemo(() => {
     const n = period || 12
     return Array.from({ length: n }, (_, i) => {
@@ -151,7 +166,7 @@ function DreamsTab({ owner, readOnly }: { owner: string; readOnly: boolean }) {
       return { key: d, label: new Intl.DateTimeFormat('pt-BR', { month: 'short', timeZone: 'UTC' }).format(new Date(`${d}-15T12:00:00Z`)).replace('.', ''), a: (rows ?? []).filter((r) => r.occurred_on.startsWith(d)).length }
     })
   }, [rows, period])
-  const list = inPeriod.filter((r) => !theme || r.themes.includes(theme) || (r.emotions ?? []).includes(theme))
+  const list = inPeriod.filter((r) => !theme || r.themes.includes(theme) || (r.emotions ?? []).includes(theme) || (r.symbols ?? []).includes(theme))
 
   if (!rows) return <Spinner className="size-6" />
   return (
@@ -169,9 +184,10 @@ function DreamsTab({ owner, readOnly }: { owner: string; readOnly: boolean }) {
         <EmptyState icon={Moon} title="Nenhum sonho registrado">{readOnly ? 'O cliente ainda não registrou sonhos.' : 'Registre ao acordar: o relato, os motivos principais e as emoções. Com o tempo aparecem os temas que se repetem.'}</EmptyState>
       ) : (
         <>
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <FreqBars title={`Motivos mais frequentes (${inPeriod.length} sonhos)`} items={themes} active={theme} onPick={setTheme} color="bg-violet-500" />
             <FreqBars title="Emoções mais frequentes" items={emotions} active={theme} onPick={setTheme} color="bg-rose-400" />
+            <FreqBars title="Elementos que se repetem" items={symbols} active={theme} onPick={setTheme} color="bg-sky-500" />
           </div>
           <section className="card">
             <h3 className="mb-2 text-sm font-semibold">Sonhos por mês</h3>
@@ -183,17 +199,37 @@ function DreamsTab({ owner, readOnly }: { owner: string; readOnly: boolean }) {
               <li key={d.id} className="card !p-4">
                 <button className="w-full text-left" onClick={() => setOpenId((o) => (o === d.id ? null : d.id))}>
                   <div className="text-xs text-stone-500">{br(d.occurred_on)}</div>
+                  {d.ai_summary && <p className="mt-1 text-sm font-medium text-violet-800 dark:text-violet-300">{d.ai_summary}</p>}
                   <p className={`mt-1 whitespace-pre-line text-[15px] ${openId === d.id ? '' : 'line-clamp-2'}`}>{d.content}</p>
                 </button>
+                {d.ai_status === 'pendente' && <div className="mt-2 flex items-center gap-2 text-xs text-violet-700 dark:text-violet-300"><Spinner className="size-3.5" /> A IA está interpretando o sonho…</div>}
+                {d.ai_status === 'falhou' && <div className="mt-2 text-xs text-amber-700 dark:text-amber-300">Não deu para interpretar agora.{!readOnly && <button className="ml-2 underline" onClick={() => void reinterpret(d.id)}>Tentar de novo</button>}</div>}
                 <div className="mt-2 flex flex-wrap gap-1">
                   {d.themes.map((t) => <span key={t} className="badge bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-300">{t}</span>)}
                   {(d.emotions ?? []).map((t) => <span key={t} className="badge bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300">{t}</span>)}
+                  {(d.symbols ?? []).map((t) => <span key={t} className="badge bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300">{t}</span>)}
                 </div>
                 {openId === d.id && (
                   <div className="mt-3 space-y-2 text-sm motion-safe:animate-[fadein_.3s_ease-out]">
                     {d.notes && <p><span className="text-stone-500">Associações:</span> {d.notes}</p>}
-                    {d.interpretation && <p><span className="text-stone-500">Interpretação:</span> {d.interpretation}</p>}
-                    {!readOnly && <button className="btn-ghost !px-2 !py-1 text-xs" onClick={() => setEditing(d)}><Pencil className="size-3.5" /> Editar / interpretar</button>}
+                    {d.ai_interpretation && (
+                      <div className="rounded-2xl border border-violet-200 bg-violet-50/60 p-3 dark:border-violet-900 dark:bg-violet-950/30">
+                        <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-violet-800 dark:text-violet-300"><Sparkles className="size-3.5" /> Leitura sugerida pela IA</div>
+                        <div className="space-y-2 whitespace-pre-line">{d.ai_interpretation}</div>
+                        {d.ai_questions.length > 0 && (
+                          <div className="mt-3"><div className="text-xs font-semibold text-stone-600 dark:text-stone-400">Para refletir</div>
+                            <ul className="mt-1 list-disc space-y-1 pl-5">{d.ai_questions.map((q) => <li key={q}>{q}</li>)}</ul></div>
+                        )}
+                        <p className="mt-3 text-[11px] text-stone-500">São possibilidades para pensar, não um diagnóstico. Quem dá sentido ao sonho é você (e a conversa com seu profissional).</p>
+                      </div>
+                    )}
+                    {d.interpretation && <p><span className="text-stone-500">Sua interpretação:</span> {d.interpretation}</p>}
+                    {!readOnly && (
+                      <div className="flex flex-wrap gap-2">
+                        <button className="btn-ghost !px-2 !py-1 text-xs" onClick={() => setEditing(d)}><Pencil className="size-3.5" /> Editar / interpretar</button>
+                        {d.ai_status !== 'pendente' && <button className="btn-ghost !px-2 !py-1 text-xs" onClick={() => void reinterpret(d.id)}><Sparkles className="size-3.5" /> Interpretar de novo</button>}
+                      </div>
+                    )}
                   </div>
                 )}
               </li>

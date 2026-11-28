@@ -674,4 +674,19 @@ insert into public.consent_requests (client_id, module_key) values ('00000000-00
 select test.ok((select count(*) from public.consent_requests where client_id = '00000000-0000-0000-0000-0000000000c1') = 1, 'Pedido de acesso acompanha o convite');
 commit;
 
+-- Sonhos com IA: relato novo/alterado fica pendente de interpretação; outras edições não.
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+insert into public.psy_entries (kind, content) values ('sonho', 'Eu nadava num mar escuro');
+select test.ok((select ai_status from public.psy_entries where content like 'Eu nadava%') = 'pendente', 'Sonho novo entra na fila da IA');
+update public.psy_entries set ai_status = 'pronto', symbols = '{mar}' where content like 'Eu nadava%';
+update public.psy_entries set notes = 'lembrei da praia' where content like 'Eu nadava%';
+select test.ok((select ai_status from public.psy_entries where content like 'Eu nadava%') = 'pronto', 'Editar associações não reinterpreta');
+update public.psy_entries set content = 'Eu nadava num mar escuro e calmo' where content like 'Eu nadava%';
+select test.ok((select ai_status from public.psy_entries where content like 'Eu nadava%') = 'pendente', 'Mudar o relato reinterpreta');
+insert into public.psy_entries (kind, content) values ('insight', 'Percebi algo');
+select test.ok((select ai_status from public.psy_entries where content = 'Percebi algo') is null, 'Insight não passa pela IA de sonhos');
+rollback;
+
 \echo 'TODOS OS TESTES PASSARAM'
