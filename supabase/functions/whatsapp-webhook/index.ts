@@ -12,7 +12,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { MAX_TEXT, processMessage } from '../_shared/assistant.ts'
 
-const GRAPH = `https://graph.facebook.com/${Deno.env.get('WHATSAPP_GRAPH_VERSION') ?? 'v24.0'}`
+const GRAPH = `https://graph.facebook.com/${Deno.env.get('WHATSAPP_GRAPH_VERSION') ?? 'v25.0'}`
 const SITE = Deno.env.get('SITE_URL') ?? 'https://assistente-pessoal-pink.vercel.app'
 
 const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } })
