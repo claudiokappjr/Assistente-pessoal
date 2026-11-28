@@ -94,8 +94,8 @@ function PasswordSection() {
   return (
     <Section icon={KeyRound} title="Alterar senha">
       <form onSubmit={save} className="grid gap-3 md:grid-cols-2">
-        <input type="password" className="input" placeholder="Nova senha" autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} />
-        <input type="password" className="input" placeholder="Repita a nova senha" autoComplete="new-password" value={pw2} onChange={(e) => setPw2(e.target.value)} />
+        <input type="password" className="input" placeholder="Nova senha" autoComplete="new-password" autoCapitalize="none" autoCorrect="off" spellCheck={false} value={pw} onChange={(e) => setPw(e.target.value)} />
+        <input type="password" className="input" placeholder="Repita a nova senha" autoComplete="new-password" autoCapitalize="none" autoCorrect="off" spellCheck={false} value={pw2} onChange={(e) => setPw2(e.target.value)} />
         <div className="flex items-center gap-3 md:col-span-2">
           <button className="btn-primary" disabled={busy}>{busy && <Spinner />} Alterar senha</button>
           {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}

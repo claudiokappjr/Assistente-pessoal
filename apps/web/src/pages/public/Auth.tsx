@@ -35,7 +35,8 @@ function PasswordInput({ value, onChange, autoComplete, id }: { value: string; o
   const [show, setShow] = useState(false)
   return (
     <div className="relative">
-      <input id={id} type={show ? 'text' : 'password'} className="input pr-11" value={value} onChange={(e) => onChange(e.target.value)} autoComplete={autoComplete} required minLength={8} />
+      <input id={id} type={show ? 'text' : 'password'} className="input pr-11" value={value} onChange={(e) => onChange(e.target.value)} autoComplete={autoComplete} required minLength={8}
+        autoCapitalize="none" autoCorrect="off" spellCheck={false} />
       <button type="button" onClick={() => setShow((s) => !s)} className="absolute inset-y-0 right-0 px-3 text-stone-400 hover:text-stone-600" aria-label={show ? 'Ocultar senha' : 'Mostrar senha'}>
         {show ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
       </button>
@@ -75,7 +76,7 @@ export function LoginPage() {
   async function submit(e: FormEvent) {
     e.preventDefault()
     setBusy(true); setError('')
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    const { error } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password })
     setBusy(false)
     if (error) return setError(errorMessage(error))
     navigate(from, { replace: true })
@@ -88,7 +89,7 @@ export function LoginPage() {
         {error && <Alert>{error}</Alert>}
         <div>
           <label className="label" htmlFor="email">E-mail</label>
-          <input id="email" type="email" className="input" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" required />
+          <input id="email" type="email" className="input" value={email} onChange={(e) => setEmail(e.target.value)} autoCapitalize="none" autoCorrect="off" spellCheck={false} autoComplete="email" required />
         </div>
         <div>
           <div className="flex items-center justify-between">
@@ -136,7 +137,7 @@ export function SignupPage() {
     const meta: Record<string, unknown> = { full_name: name.trim(), plan_key: accountType === 'professional' ? planKey : 'individual' }
     if (accountType === 'professional') Object.assign(meta, { pro_modules: proModules, public_name: publicName.trim() || name.trim(), council: council.trim(), registration: registration.trim(), specialties: specialtyKeys })
     const { data, error } = await supabase.auth.signUp({
-      email, password,
+      email: email.trim().toLowerCase(), password,
       options: { data: meta, emailRedirectTo: `${location.origin}/app` },
     })
     setBusy(false)
@@ -178,7 +179,7 @@ export function SignupPage() {
         </div>
         <div>
           <label className="label" htmlFor="email">E-mail</label>
-          <input id="email" type="email" className="input" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" required />
+          <input id="email" type="email" className="input" value={email} onChange={(e) => setEmail(e.target.value)} autoCapitalize="none" autoCorrect="off" spellCheck={false} autoComplete="email" required />
         </div>
         <div>
           <label className="label" htmlFor="password">Senha <span className="font-normal text-stone-400">(mín. 8 caracteres)</span></label>
@@ -229,7 +230,7 @@ export function ForgotPasswordPage() {
   async function submit(e: FormEvent) {
     e.preventDefault()
     setBusy(true); setError('')
-    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: `${location.origin}/nova-senha` })
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), { redirectTo: `${location.origin}/nova-senha` })
     setBusy(false)
     if (error) return setError(errorMessage(error))
     setDone(true)
@@ -244,7 +245,7 @@ export function ForgotPasswordPage() {
           {error && <Alert>{error}</Alert>}
           <div>
             <label className="label" htmlFor="email">E-mail</label>
-            <input id="email" type="email" className="input" value={email} onChange={(e) => setEmail(e.target.value)} required />
+            <input id="email" type="email" className="input" value={email} onChange={(e) => setEmail(e.target.value)} autoCapitalize="none" autoCorrect="off" spellCheck={false} required />
           </div>
           <button className="btn-primary w-full" disabled={busy}>{busy && <Spinner />} Enviar link</button>
         </form>
