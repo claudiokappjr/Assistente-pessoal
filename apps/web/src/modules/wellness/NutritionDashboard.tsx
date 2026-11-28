@@ -3,7 +3,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Spinner } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
 import { todayISO } from '../config'
-import { BarChart, GoalsButton, GoalsModal, MeterBar, Ring, fmtInt, useCountUp, useGoals, useShown } from './charts'
+import { BarChart, MeterBar, Ring, fmtInt, useCountUp, useGoals, useShown } from './charts'
+import { GoalsButton, GoalsModal, PlanCard } from './goals'
 
 interface FoodItem { name: string; portion: string; grams: number; kcal: number; protein_g: number; carbs_g: number; fat_g: number; fiber_g: number }
 export interface FoodRow {
@@ -159,9 +160,10 @@ export function NutritionDashboard({ owner, readOnly, refreshKey }: { owner: str
         {!readOnly && <GoalsButton onClick={() => setEditGoals(true)} />}
       </div>
 
+      <PlanCard goals={g} focus="nutri" onEdit={readOnly ? undefined : () => setEditGoals(true)} />
       {!g?.kcal_day && !readOnly && (
         <button onClick={() => setEditGoals(true)} className="flex w-full items-center gap-2 rounded-2xl border border-dashed border-brand-300 p-3 text-left text-sm text-brand-800 dark:border-brand-800 dark:text-brand-200">
-          <Sparkles className="size-4 shrink-0" /> Defina suas metas diárias (calorias, proteína…) para ver quanto falta em cada dia.
+          <Sparkles className="size-4 shrink-0" /> Informe idade, peso, altura e objetivo: o sistema calcula suas metas de calorias, proteína e treino.
         </button>
       )}
 

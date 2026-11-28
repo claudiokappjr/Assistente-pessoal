@@ -590,4 +590,20 @@ set local request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000c';
 select test.ok((select count(*) from public.scale_responses) = 0 and (select count(*) from public.psy_entries) = 0, 'Admin não vê escalas nem sonhos');
 commit;
 
+-- Metas calculadas: dados do objetivo ficam com o dono.
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+update public.wellness_goals set sex = 'feminino', birth_year = 1990, height_cm = 165, activity_level = 'moderado', goal_type = 'perder_gordura', target_weight_kg = 70, target_date = '2027-03-01';
+select test.ok((select goal_type from public.wellness_goals) = 'perder_gordura', 'Dono guarda objetivo, altura e prazo');
+select test.fails($$update public.wellness_goals set goal_type = 'inventado'$$, 'Objetivo fora da lista é recusado');
+commit;
+
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+update public.wellness_goals set diet_preferences = 'sem lactose', diet_suggestion = '{"meals":[]}';
+select test.ok((select diet_preferences from public.wellness_goals) = 'sem lactose', 'Preferências e sugestão de dieta ficam nas metas do dono');
+commit;
+
 \echo 'TODOS OS TESTES PASSARAM'

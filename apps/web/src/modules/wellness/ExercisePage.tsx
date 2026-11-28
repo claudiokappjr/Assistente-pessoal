@@ -7,7 +7,8 @@ import { supabase } from '../../lib/supabase'
 import { MODULES } from '../config'
 import { ModulePage } from '../ModulePage'
 import { PendingDrafts } from '../../components/PendingDrafts'
-import { BarChart, CumulativeChart, GoalsButton, GoalsModal, Ring, fmtInt, useCountUp, useGoals, useShown } from './charts'
+import { BarChart, CumulativeChart, Ring, fmtInt, useCountUp, useGoals, useShown } from './charts'
+import { GoalsButton, GoalsModal, PlanCard } from './goals'
 
 interface ExRow {
   id: string; activity: string; performed_on: string; duration_min: number | null; kcal: number | null; met: number | null
@@ -140,9 +141,10 @@ export function ExercisePage({ ownerId, embedded = false }: { ownerId?: string; 
 
       {rows === null || goals === undefined ? <Spinner className="size-6" /> : (
         <div className="mb-8 space-y-4">
+          <PlanCard goals={g} focus="treino" onEdit={readOnly ? undefined : () => setEditGoals(true)} />
           {!g?.exercise_minutes_month && !g?.exercise_kcal_month && !g?.exercise_days_month && !readOnly && (
             <button onClick={() => setEditGoals(true)} className="flex w-full items-center gap-2 rounded-2xl border border-dashed border-brand-300 p-3 text-left text-sm text-brand-800 dark:border-brand-800 dark:text-brand-200">
-              <Sparkles className="size-4 shrink-0" /> Defina sua meta do mês (minutos, dias de treino ou calorias) e seu peso, para acompanhar o progresso.
+              <Sparkles className="size-4 shrink-0" /> Informe idade, peso, altura e objetivo: o sistema calcula sua meta de treino do mês e o plano semanal.
             </button>
           )}
           {!g?.weight_kg && stats.kcal > 0 && <p className="text-xs text-stone-500">Gasto estimado com peso padrão de 70 kg. {readOnly ? '' : 'Informe seu peso em Metas para um cálculo mais preciso.'}</p>}

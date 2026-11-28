@@ -1,13 +1,14 @@
-import { Target, X } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { Alert, Spinner } from '../../components/ui'
-import { errorMessage, supabase } from '../../lib/supabase'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { supabase } from '../../lib/supabase'
 
 // ------------------------------------------------------------------ metas
 export interface Goals {
   owner_id?: string; weight_kg: number | null; kcal_day: number | null; protein_g_day: number | null; carbs_g_day: number | null
   fat_g_day: number | null; water_ml_day: number | null; exercise_minutes_month: number | null; exercise_days_month: number | null
   exercise_kcal_month: number | null
+  sex?: 'feminino' | 'masculino' | null; birth_year?: number | null; height_cm?: number | null; activity_level?: string | null
+  goal_type?: string | null; target_weight_kg?: number | null; target_date?: string | null; plan_notes?: string | null
+  diet_preferences?: string | null; diet_suggestion?: unknown; diet_generated_at?: string | null
 }
 export function useGoals(owner: string) {
   const [goals, setGoals] = useState<Goals | null | undefined>(undefined)
@@ -17,73 +18,6 @@ export function useGoals(owner: string) {
   }, [owner])
   useEffect(() => { void load() }, [load])
   return { goals, reload: load }
-}
-
-const GOAL_FIELDS: { key: keyof Goals; label: string; unit: string; group: 'corpo' | 'nutri' | 'treino'; placeholder: string }[] = [
-  { key: 'weight_kg', label: 'Peso atual', unit: 'kg', group: 'corpo', placeholder: '75' },
-  { key: 'kcal_day', label: 'Calorias por dia', unit: 'kcal', group: 'nutri', placeholder: '2000' },
-  { key: 'protein_g_day', label: 'Proteína por dia', unit: 'g', group: 'nutri', placeholder: '120' },
-  { key: 'carbs_g_day', label: 'Carboidratos por dia', unit: 'g', group: 'nutri', placeholder: '220' },
-  { key: 'fat_g_day', label: 'Gorduras por dia', unit: 'g', group: 'nutri', placeholder: '65' },
-  { key: 'water_ml_day', label: 'Água por dia', unit: 'ml', group: 'nutri', placeholder: '2500' },
-  { key: 'exercise_minutes_month', label: 'Minutos de treino no mês', unit: 'min', group: 'treino', placeholder: '720' },
-  { key: 'exercise_days_month', label: 'Dias de treino no mês', unit: 'dias', group: 'treino', placeholder: '16' },
-  { key: 'exercise_kcal_month', label: 'Calorias gastas em treino no mês', unit: 'kcal', group: 'treino', placeholder: '6000' },
-]
-
-export function GoalsModal({ owner, goals, focus, onClose, onSaved }: { owner: string; goals: Goals | null; focus: 'nutri' | 'treino'; onClose: () => void; onSaved: () => void }) {
-  const [f, setF] = useState<Record<string, string>>(() =>
-    Object.fromEntries(GOAL_FIELDS.map((g) => [g.key, goals?.[g.key] != null ? String(goals[g.key]).replace('.', ',') : ''])))
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-  async function save(e: FormEvent) {
-    e.preventDefault()
-    setBusy(true); setError('')
-    const row: Record<string, unknown> = { owner_id: owner }
-    for (const g of GOAL_FIELDS) {
-      const v = f[g.key].trim().replace(',', '.')
-      row[g.key] = v ? (g.key === 'weight_kg' ? Number(v) : Math.round(Number(v))) : null
-    }
-    const { error } = await supabase.from('wellness_goals').upsert(row)
-    setBusy(false)
-    if (error) return setError(/check/i.test(error.message) ? 'Algum valor está fora do esperado. Confira os números.' : errorMessage(error))
-    onSaved()
-  }
-  const groups = focus === 'nutri' ? (['corpo', 'nutri', 'treino'] as const) : (['corpo', 'treino', 'nutri'] as const)
-  const title = { corpo: 'Você', nutri: 'Metas de alimentação (por dia)', treino: 'Metas de treino (por mês)' }
-  return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center" onClick={onClose}>
-      <form onSubmit={save} onClick={(e) => e.stopPropagation()} className="max-h-[92dvh] w-full max-w-xl overflow-y-auto rounded-t-3xl bg-white p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:rounded-3xl dark:bg-stone-900">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="font-display text-xl font-semibold">Minhas metas</h2>
-          <button type="button" className="btn-ghost !p-2" onClick={onClose} aria-label="Fechar"><X className="size-5" /></button>
-        </div>
-        <p className="mb-4 text-sm text-stone-500">Se você tem orientação de nutricionista ou educador físico, use os valores que eles passaram. O peso é usado para estimar o gasto dos treinos.</p>
-        {groups.map((grp) => (
-          <fieldset key={grp} className="mb-4">
-            <legend className="mb-2 text-sm font-semibold text-stone-600 dark:text-stone-300">{title[grp]}</legend>
-            <div className="grid grid-cols-2 gap-3">
-              {GOAL_FIELDS.filter((g) => g.group === grp).map((g) => (
-                <label key={g.key} className={g.key === 'exercise_kcal_month' ? 'col-span-2' : ''}>
-                  <span className="label">{g.label}</span>
-                  <div className="relative">
-                    <input className="input pr-12" inputMode="decimal" placeholder={g.placeholder} value={f[g.key]} onChange={(e) => setF((x) => ({ ...x, [g.key]: e.target.value }))} />
-                    <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-stone-400">{g.unit}</span>
-                  </div>
-                </label>
-              ))}
-            </div>
-          </fieldset>
-        ))}
-        {error && <div className="mb-3"><Alert>{error}</Alert></div>}
-        <div className="flex justify-end"><button className="btn-primary" disabled={busy}>{busy && <Spinner />} Salvar metas</button></div>
-      </form>
-    </div>
-  )
-}
-
-export function GoalsButton({ onClick }: { onClick: () => void }) {
-  return <button className="btn-outline" onClick={onClick}><Target className="size-4" /> Metas</button>
 }
 
 // ------------------------------------------------------------------ animação

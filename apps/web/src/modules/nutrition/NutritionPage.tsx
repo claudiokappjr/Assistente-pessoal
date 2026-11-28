@@ -1,7 +1,7 @@
 import {
   Check, ChefHat, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, ClipboardPaste, Copy, Inbox, Link2, MessageCircle,
-  Pencil, Plus, Share2, ShoppingCart, Sparkles, Trash2, UtensilsCrossed, X,
-} from 'lucide-react'
+  Pencil, Plus, Share2, ShoppingCart, Sparkles, Target, Trash2, UtensilsCrossed, X,
+}  from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthProvider'
@@ -10,6 +10,8 @@ import { errorMessage, supabase } from '../../lib/supabase'
 import { MODULES, todayISO } from '../config'
 import { ModulePage } from '../ModulePage'
 import { NutritionDashboard } from '../wellness/NutritionDashboard'
+import { useGoals } from '../wellness/charts'
+import { DietPanel, GoalsModal } from '../wellness/goals'
 import { PendingDrafts } from '../../components/PendingDrafts'
 
 // ------------------------------------------------------------------ tipos e rótulos
@@ -705,9 +707,10 @@ function ShoppingTab({ recipes, week, owner, readOnly }: { recipes: Recipe[]; we
 }
 
 // ------------------------------------------------------------------ página
-type Tab = 'registros' | 'receitas' | 'semana' | 'compras'
+type Tab = 'registros' | 'dieta' | 'receitas' | 'semana' | 'compras'
 const TABS: { key: Tab; label: string; icon: typeof ChefHat }[] = [
   { key: 'registros', label: 'Registros', icon: ClipboardList },
+  { key: 'dieta', label: 'Dieta', icon: Target },
   { key: 'receitas', label: 'Receitas', icon: ChefHat },
   { key: 'semana', label: 'Semana', icon: UtensilsCrossed },
   { key: 'compras', label: 'Compras', icon: ShoppingCart },
@@ -721,6 +724,8 @@ export function NutritionPage({ ownerId, embedded = false }: { ownerId?: string;
   const { recipes, loadRecipes } = useNutrition(owner)
   const week = useWeek(owner)
   const [refreshKey, setRefreshKey] = useState(0)
+  const { goals, reload: reloadGoals } = useGoals(owner)
+  const [editGoals, setEditGoals] = useState(false)
 
   return (
     <div>
@@ -729,7 +734,7 @@ export function NutritionPage({ ownerId, embedded = false }: { ownerId?: string;
           actions={!readOnly && <Link to="/app/assistente" className="btn-outline"><Sparkles className="size-4" /> Pelo assistente</Link>} />
       )}
       {!readOnly && <PendingDrafts moduleKey="nutricao" moduleName="Nutrição" onDecided={() => setRefreshKey((k) => k + 1)} />}
-      <div className="mb-5 grid grid-cols-4 gap-1 rounded-xl bg-stone-200/60 p-1 dark:bg-stone-800">
+      <div className="mb-5 grid grid-cols-5 gap-1 rounded-xl bg-stone-200/60 p-1 dark:bg-stone-800">
         {TABS.map((t) => (
           <button key={t.key} onClick={() => setTab(t.key)}
             className={`flex flex-col items-center gap-0.5 rounded-lg px-1 py-2 text-xs font-medium transition sm:flex-row sm:justify-center sm:gap-1.5 sm:text-sm ${tab === t.key ? 'bg-white text-stone-900 shadow-sm dark:bg-stone-950 dark:text-stone-50' : 'text-stone-600 dark:text-stone-400'}`}>
@@ -744,7 +749,9 @@ export function NutritionPage({ ownerId, embedded = false }: { ownerId?: string;
           <ModulePage key={refreshKey} config={MODULES.nutricao} ownerId={ownerId} embedded onChanged={() => setRefreshKey((k) => k + 1)} hideSummary />
         </>
       )}
-      {tab !== 'registros' && recipes === null && <Spinner className="size-6" />}
+      {tab === 'dieta' && goals !== undefined && <DietPanel key={goals?.diet_generated_at ?? 'x'} owner={owner} goals={goals} readOnly={readOnly} onChanged={() => void reloadGoals()} onOpenGoals={() => setEditGoals(true)} />}
+      {editGoals && <GoalsModal owner={owner} goals={goals ?? null} focus="nutri" onClose={() => setEditGoals(false)} onSaved={() => { setEditGoals(false); void reloadGoals(); setRefreshKey((k) => k + 1) }} />}
+      {tab !== 'registros' && tab !== 'dieta' && recipes === null && <Spinner className="size-6" />}
       {tab === 'receitas' && recipes && <RecipesTab recipes={recipes} reload={() => void loadRecipes()} readOnly={readOnly} />}
       {tab === 'semana' && recipes && <WeekTab recipes={recipes} week={week} readOnly={readOnly} />}
       {tab === 'compras' && recipes && <ShoppingTab recipes={recipes} week={week} owner={owner} readOnly={readOnly} />}
