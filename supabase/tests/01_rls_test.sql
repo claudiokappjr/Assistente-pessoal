@@ -505,4 +505,38 @@ set local request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000c';
 select test.fails($$select public.check_setup_token('tok-teste', 'whatsapp')$$, 'Usuário logado (mesmo admin) não consulta token de configuração');
 commit;
 
+-- Calorias, gasto nos treinos e metas.
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+insert into public.food_logs (id, kind, meal, items) values ('60000000-0000-0000-0000-000000000001', 'refeicao', 'almoço', '{arroz,feijão}');
+insert into public.food_logs (id, kind, meal, items, kcal) values ('60000000-0000-0000-0000-000000000002', 'refeicao', 'jantar', '{sopa}', 300);
+insert into public.food_logs (id, kind, water_ml) values ('60000000-0000-0000-0000-000000000003', 'agua', 500);
+select test.ok((select nutrition_status from public.food_logs where id = '60000000-0000-0000-0000-000000000001') = 'pendente', 'Refeição sem calorias fica pendente de estimativa');
+select test.ok((select nutrition_status from public.food_logs where id = '60000000-0000-0000-0000-000000000002') = 'manual', 'Refeição com calorias informadas é manual');
+select test.ok((select nutrition_status from public.food_logs where id = '60000000-0000-0000-0000-000000000003') is null, 'Água não tem estimativa de calorias');
+update public.food_logs set kcal = 700 where id = '60000000-0000-0000-0000-000000000001';
+select test.ok((select nutrition_status from public.food_logs where id = '60000000-0000-0000-0000-000000000001') = 'manual', 'Corrigir calorias à mão vira manual');
+update public.food_logs set items = '{arroz,feijão,bife}' where id = '60000000-0000-0000-0000-000000000001';
+select test.ok((select nutrition_status from public.food_logs where id = '60000000-0000-0000-0000-000000000001') = 'pendente', 'Mudar alimentos pede nova estimativa');
+insert into public.exercise_logs (id, activity, duration_min) values ('60000000-0000-0000-0000-000000000004', 'Corrida', 30);
+insert into public.exercise_logs (id, activity) values ('60000000-0000-0000-0000-000000000005', 'Yoga');
+select test.ok((select kcal_status from public.exercise_logs where id = '60000000-0000-0000-0000-000000000004') = 'pendente'
+  and (select kcal_status from public.exercise_logs where id = '60000000-0000-0000-0000-000000000005') = 'sem_duracao', 'Treino com duração é estimado; sem duração aguarda');
+insert into public.wellness_goals (weight_kg, kcal_day, exercise_minutes_month) values (80, 2200, 600);
+select test.ok((select kcal_day from public.wellness_goals) = 2200, 'Dono define as próprias metas');
+select test.fails($$insert into public.wellness_goals (owner_id, kcal_day) values ('00000000-0000-0000-0000-00000000000d', 2000)$$, 'Não cria metas em nome de outro');
+select test.fails($$select public.check_internal_key('x')$$, 'Usuário não consulta a chave interna de estimativa');
+commit;
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000d';
+select test.ok((select count(*) from public.wellness_goals) = 0, 'Estranho não vê metas alheias');
+commit;
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000c';
+select test.ok((select count(*) from public.wellness_goals) = 0 and (select count(*) from public.food_logs) = 0, 'Admin não vê metas nem refeições');
+commit;
+
 \echo 'TODOS OS TESTES PASSARAM'

@@ -187,12 +187,20 @@ function Summary({ config, rows }: { config: ModuleConfig; rows: Row[] }) {
  * Com ownerId: visão do profissional sobre um cliente (somente leitura; o
  * banco só devolve dados se houver consentimento ativo).
  */
-export function ModulePage({ config, ownerId, embedded = false }: { config: ModuleConfig; ownerId?: string; embedded?: boolean }) {
+export function ModulePage({ config, ownerId, embedded = false, ym: ymProp, onChanged, hideSummary = false }: {
+  config: ModuleConfig; ownerId?: string; embedded?: boolean
+  /** Mês controlado pela tela que embute a lista (esconde a navegação própria). */
+  ym?: { y: number; m: number }
+  /** Avisado quando um registro é criado, editado ou excluído. */
+  onChanged?: () => void
+  hideSummary?: boolean
+}) {
   const { session } = useAuth()
   const readOnly = Boolean(ownerId && ownerId !== session?.user.id)
   const owner = ownerId ?? session!.user.id
   const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }))
-  const [ym, setYm] = useState({ y: now.getFullYear(), m: now.getMonth() })
+  const [ymState, setYm] = useState({ y: now.getFullYear(), m: now.getMonth() })
+  const ym = ymProp ?? ymState
   const [rows, setRows] = useState<Row[] | null>(null)
   const [editing, setEditing] = useState<Row | 'new' | null>(null)
   const [error, setError] = useState('')
@@ -225,7 +233,7 @@ export function ModulePage({ config, ownerId, embedded = false }: { config: Modu
     if (!confirm('Excluir este registro?')) return
     const { error } = await supabase.from(config.table).delete().eq('id', r.id)
     if (error) return setError(errorMessage(error))
-    void load()
+    void load(); onChanged?.()
   }
 
   const shift = (d: number) => setYm(({ y, m }) => { const t = m + d; return { y: y + Math.floor(t / 12), m: ((t % 12) + 12) % 12 } })
@@ -248,16 +256,16 @@ export function ModulePage({ config, ownerId, embedded = false }: { config: Modu
       {embedded && !readOnly && (
         <div className="mb-3 flex justify-end"><button className="btn-primary" onClick={() => setEditing('new')}><Plus className="size-4" /> Adicionar</button></div>
       )}
-      <div className="mb-4 flex items-center justify-between">
+      {!ymProp && <div className="mb-4 flex items-center justify-between">
         <button className="btn-ghost !p-2" onClick={() => shift(-1)} aria-label="Mês anterior"><ChevronLeft className="size-5" /></button>
         <div className="font-medium capitalize">{MONTHS[ym.m]} de {ym.y}</div>
         <button className="btn-ghost !p-2" onClick={() => shift(1)} aria-label="Próximo mês"><ChevronRight className="size-5" /></button>
-      </div>
+      </div>}
 
       {error && <div className="mb-4"><Alert>{error}</Alert></div>}
       {rows === null ? <Spinner className="size-6" /> : (
         <>
-          <Summary config={config} rows={rows} />
+          {!hideSummary && <Summary config={config} rows={rows} />}
           <div className="mt-6 space-y-6">
             {rows.length === 0 && (
               <EmptyState icon={Icon ?? Inbox} title="Nada registrado neste mês">
@@ -299,7 +307,7 @@ export function ModulePage({ config, ownerId, embedded = false }: { config: Modu
 
       {config.note && !embedded && <p className="mt-8 text-xs text-stone-500">{config.note}</p>}
       {!readOnly && editing && (
-        <RecordForm config={config} initial={editing === 'new' ? null : editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); void load() }} />
+        <RecordForm config={config} initial={editing === 'new' ? null : editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); void load(); onChanged?.() }} />
       )}
     </div>
   )

@@ -98,6 +98,7 @@ export const MODULES: Record<string, ModuleConfig> = {
       { key: 'activity', label: 'Atividade', type: 'text', required: true, placeholder: 'Musculação, corrida…' },
       { key: 'performed_on', label: 'Data', type: 'date', required: true, half: true },
       { key: 'duration_min', label: 'Duração (min)', type: 'number', half: true },
+      { key: 'intensity', label: 'Intensidade', type: 'select', half: true, options: [{ value: 'leve', label: 'Leve' }, { value: 'moderada', label: 'Moderada' }, { value: 'intensa', label: 'Intensa' }] },
       { key: 'distance_km', label: 'Distância (km)', type: 'number', half: true },
       { key: 'load_kg', label: 'Carga (kg)', type: 'number', half: true },
       { key: 'sets', label: 'Séries', type: 'number', half: true },
@@ -106,7 +107,8 @@ export const MODULES: Record<string, ModuleConfig> = {
     ],
     defaults: () => ({ performed_on: todayISO() }),
     primary: (r) => String(r.activity ?? ''),
-    secondary: (r) => join(r.duration_min != null && `${r.duration_min} min`, r.distance_km != null && `${r.distance_km} km`,
+    secondary: (r) => join(r.duration_min != null && `${r.duration_min} min`, r.kcal != null && `~${Math.round(Number(r.kcal))} kcal`,
+      r.kcal_status === 'pendente' && 'calculando calorias…', r.intensity as string, r.distance_km != null && `${r.distance_km} km`,
       r.sets != null && r.reps != null && `${r.sets}×${r.reps}`, r.load_kg != null && `${r.load_kg} kg`),
   },
   nutricao: {
@@ -123,8 +125,7 @@ export const MODULES: Record<string, ModuleConfig> = {
     ],
     defaults: () => ({ kind: 'refeicao', logged_on: todayISO() }),
     primary: (r) => (r.kind === 'agua' ? `Água${r.water_ml ? ` — ${r.water_ml} ml` : ''}` : String(r.meal ?? 'Refeição')),
-    secondary: (r) => join(hhmm(r.logged_time), list(r.items)),
-    note: 'Foto do prato e estimativa de calorias chegam na próxima versão do módulo.',
+    secondary: (r) => join(hhmm(r.logged_time), r.kcal != null && `~${Math.round(Number(r.kcal))} kcal`, r.nutrition_status === 'pendente' && 'calculando…', list(r.items)),
   },
   saude: {
     key: 'saude', table: 'health_entries', title: 'Saúde', subtitle: 'Diário de sintomas e anotações de saúde.',

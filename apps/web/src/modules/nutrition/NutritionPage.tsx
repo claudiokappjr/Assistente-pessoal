@@ -9,6 +9,7 @@ import { Alert, EmptyState, PageHeader, Spinner } from '../../components/ui'
 import { errorMessage, supabase } from '../../lib/supabase'
 import { MODULES, todayISO } from '../config'
 import { ModulePage } from '../ModulePage'
+import { NutritionDashboard } from '../wellness/NutritionDashboard'
 
 // ------------------------------------------------------------------ tipos e rótulos
 export type MealType = 'cafe' | 'lanche' | 'almoco' | 'jantar'
@@ -718,6 +719,7 @@ export function NutritionPage({ ownerId, embedded = false }: { ownerId?: string;
   const [tab, setTab] = useState<Tab>(() => (new URLSearchParams(location.search).get('aba') as Tab) || 'registros')
   const { recipes, loadRecipes } = useNutrition(owner)
   const week = useWeek(owner)
+  const [refreshKey, setRefreshKey] = useState(0)
 
   return (
     <div>
@@ -733,7 +735,13 @@ export function NutritionPage({ ownerId, embedded = false }: { ownerId?: string;
           </button>
         ))}
       </div>
-      {tab === 'registros' && <ModulePage config={MODULES.nutricao} ownerId={ownerId} embedded />}
+      {tab === 'registros' && (
+        <>
+          <NutritionDashboard owner={owner} readOnly={readOnly} refreshKey={refreshKey} />
+          <h3 className="mb-2 text-sm font-semibold text-stone-600 dark:text-stone-300">Todos os registros do mês</h3>
+          <ModulePage config={MODULES.nutricao} ownerId={ownerId} embedded onChanged={() => setRefreshKey((k) => k + 1)} hideSummary />
+        </>
+      )}
       {tab !== 'registros' && recipes === null && <Spinner className="size-6" />}
       {tab === 'receitas' && recipes && <RecipesTab recipes={recipes} reload={() => void loadRecipes()} readOnly={readOnly} />}
       {tab === 'semana' && recipes && <WeekTab recipes={recipes} week={week} readOnly={readOnly} />}

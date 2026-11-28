@@ -32,13 +32,19 @@ async function validSignature(raw: string, header: string | null) {
 }
 
 // ------------------------------------------------------------------ envio
+/** Envia para o número como a Meta entregou; se a lista de teste recusar (131030), tenta com/sem o 9. */
 async function send(to: string, payload: Record<string, unknown>) {
-  const res = await fetch(`${GRAPH}/${Deno.env.get('WHATSAPP_PHONE_NUMBER_ID')}/messages`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${Deno.env.get('WHATSAPP_TOKEN')}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to, ...payload }),
-  })
-  if (!res.ok) console.error('whatsapp send', res.status, (await res.text()).slice(0, 300))
+  for (const dest of [...new Set([to, replyTo(to), without9(to)])]) {
+    const res = await fetch(`${GRAPH}/${Deno.env.get('WHATSAPP_PHONE_NUMBER_ID')}/messages`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${Deno.env.get('WHATSAPP_TOKEN')}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to: dest, ...payload }),
+    })
+    const body = await res.text()
+    if (res.ok) { console.log('whatsapp send ok', dest.slice(0, 6) + '…'); return }
+    console.error('whatsapp send', res.status, body.slice(0, 300))
+    if (!body.includes('131030')) return
+  }
 }
 const sendText = (to: string, body: string) => send(to, { type: 'text', text: { body: body.slice(0, 4000), preview_url: false } })
 const sendButtons = (to: string, body: string, buttons: { id: string; title: string }[]) =>
@@ -76,15 +82,20 @@ interface WaMessage {
   button?: { payload: string; text: string }
 }
 
-/** Responde sempre no formato com o 9 (celular BR): a Meta entrega sem ele, mas a lista de teste e o cadastro usam com. */
+/** Celular BR: formato com o 9 / sem o 9 (a Meta às vezes entrega sem ele). */
 function replyTo(waId: string) {
   const d = waId.replace(/\D/g, '')
   const br = d.match(/^55(\d{2})([6-9]\d{7})$/)
   return br ? `55${br[1]}9${br[2]}` : d
 }
+function without9(waId: string) {
+  const d = waId.replace(/\D/g, '')
+  const br = d.match(/^55(\d{2})9([6-9]\d{7})$/)
+  return br ? `55${br[1]}${br[2]}` : d
+}
 
 async function handle(m: WaMessage) {
-  const to = replyTo(m.from)
+  const to = m.from
   const identity = await findIdentity(m.from)
   const text = m.text?.body?.trim() ?? ''
 
@@ -117,7 +128,8 @@ async function handle(m: WaMessage) {
         if (error) { console.error('confirm', error.message); return sendText(to, 'Não consegui salvar agora. Confira na Caixa de entrada do app.') }
       }
       const left = drafts.length - ok.length
-      return sendText(to, `✅ Salvo: ${ok.map((d) => d.title).join('; ') || 'nada'}.${left ? `\n${left} item(ns) sem destino ficaram na Caixa de entrada: ${SITE}/app/caixa-de-entrada` : ''}`)
+      const calc = ok.some((d) => d.module_key === 'nutricao' || d.module_key === 'exercicios') ? '\nCalorias e nutrientes aparecem no app em instantes.' : ''
+      return sendText(to, `✅ Salvo: ${ok.map((d) => d.title).join('; ') || 'nada'}.${calc}${left ? `\n${left} item(ns) sem destino ficaram na Caixa de entrada: ${SITE}/app/caixa-de-entrada` : ''}`)
     }
     if (action === 'no') {
       await db.from('assistant_drafts').update({ status: 'rejected', decided_at: new Date().toISOString() }).in('id', drafts.map((d) => d.id))
@@ -166,9 +178,15 @@ Deno.serve(async (req) => {
     return new Response('Invalid signature', { status: 401 })
   }
 
-  let payload: { entry?: { changes?: { value?: { messages?: WaMessage[] } }[] }[] }
+  type Status = { status: string; errors?: { code: number; title?: string; message?: string; error_data?: { details?: string } }[] }
+  let payload: { entry?: { changes?: { value?: { messages?: WaMessage[]; statuses?: Status[] } }[] }[] }
   try { payload = JSON.parse(raw) } catch { return new Response('Bad request', { status: 400 }) }
-  const messages = (payload.entry ?? []).flatMap((e) => e.changes ?? []).flatMap((c) => c.value?.messages ?? [])
+  const values = (payload.entry ?? []).flatMap((e) => e.changes ?? []).map((c) => c.value ?? {})
+  const messages = values.flatMap((v) => v.messages ?? [])
+  // Entrega que falhou depois de aceita pela Meta: registra o motivo (sem conteúdo da mensagem).
+  for (const st of values.flatMap((v) => v.statuses ?? [])) {
+    if (st.status === 'failed') console.error('whatsapp entrega falhou', JSON.stringify(st.errors ?? []).slice(0, 400))
+  }
 
   // Responde rápido para a Meta e processa em segundo plano.
   const work = Promise.all(messages.map((m) => handle(m).catch((e) => console.error('whatsapp handle', e instanceof Error ? e.message : e))))
