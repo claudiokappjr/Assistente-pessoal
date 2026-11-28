@@ -9,8 +9,9 @@ import type { AuditLog, WhatsappIdentity } from '../../lib/types'
 const TABLE_LABEL: Record<string, string> = {
   user_roles: 'Papel de acesso', consent_grants: 'Autorização de profissional', professional_client_links: 'Vínculo com profissional',
   professional_profiles: 'Perfil profissional', whatsapp_identities: 'Número de WhatsApp', user_modules: 'Módulos habilitados',
+  subscriptions: 'Assinatura', assistant_drafts: 'Registro do assistente', 'auth.users': 'Link de acesso/senha',
 }
-const ACTION_LABEL: Record<string, string> = { insert: 'criado', update: 'alterado', delete: 'removido' }
+const ACTION_LABEL: Record<string, string> = { insert: 'criado', update: 'alterado', delete: 'removido', access_link: 'gerado' }
 
 export function SettingsPage() {
   return (

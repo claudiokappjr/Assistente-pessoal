@@ -67,10 +67,10 @@ export function ProPlanPicker({ planKey, setPlanKey, selected, setSelected }: {
 /** Mostra o link de primeiro acesso com botões de copiar e enviar por WhatsApp. */
 export function AccessLink({ link, name }: { link: string; name: string }) {
   const [copied, setCopied] = useState(false)
-  const text = `Olá, ${name.split(' ')[0]}! Sua conta no Assistente Pessoal está pronta. Toque no link para criar sua senha: ${link}`
+  const text = `Olá, ${name.split(' ')[0]}! Toque no link para criar sua senha no Assistente Pessoal: ${link}`
   return (
     <div className="rounded-xl border border-brand-200 bg-brand-50/60 p-3 dark:border-brand-900 dark:bg-brand-900/20">
-      <p className="text-sm font-medium">Conta criada. Envie o link de primeiro acesso:</p>
+      <p className="text-sm font-medium">Link pronto. Envie para a pessoa:</p>
       <p className="mt-1 break-all text-xs text-stone-500">{link}</p>
       <div className="mt-3 flex flex-wrap gap-2">
         <a className="btn-primary !py-2" href={`https://wa.me/?text=${encodeURIComponent(text)}`} target="_blank" rel="noreferrer"><MessageCircle className="size-4" /> Enviar por WhatsApp</a>
@@ -84,11 +84,12 @@ export function AccessLink({ link, name }: { link: string; name: string }) {
 }
 
 /** Gera link de primeiro acesso para conta que ainda não entrou (sem depender de e-mail). */
-export function AccessLinkButton({ userId, name, className = 'btn-outline !px-2.5 !py-1.5 text-xs' }: { userId: string; name: string; className?: string }) {
+export function AccessLinkButton({ userId, name, reset = false, className = 'btn-outline !px-2.5 !py-1.5 text-xs' }: { userId: string; name: string; reset?: boolean; className?: string }) {
   const [busy, setBusy] = useState(false)
   const [link, setLink] = useState('')
   const [error, setError] = useState('')
   async function generate() {
+    if (reset && !confirm(`Gerar link para ${name} redefinir a senha? Isso fica registrado na auditoria e no histórico da pessoa. Envie o link só para ela.`)) return
     setBusy(true); setError(''); setLink('')
     const { data, error } = await supabase.functions.invoke('manage-users', { body: { mode: 'access_link', user_id: userId } })
     setBusy(false)
@@ -101,7 +102,7 @@ export function AccessLinkButton({ userId, name, className = 'btn-outline !px-2.
   }
   return (
     <>
-      <button type="button" className={className} disabled={busy} onClick={() => void generate()}><KeyRound className="size-3.5" /> Link de acesso</button>
+      <button type="button" className={className} disabled={busy} onClick={() => void generate()}><KeyRound className="size-3.5" /> {reset ? 'Link para redefinir senha' : 'Link de acesso'}</button>
       {(link || error) && (
         <div className="basis-full">
           {error ? <p className="mt-2 text-xs text-red-700 dark:text-red-400">{error}</p> : <div className="mt-2"><AccessLink link={link} name={name} /></div>}

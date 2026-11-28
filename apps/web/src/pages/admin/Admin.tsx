@@ -213,7 +213,7 @@ export function AdminUsersPage() {
                     </button>
                   )}
                   <button className="btn-outline !px-2.5 !py-1.5 text-xs" onClick={() => setEditing(u)}><CreditCard className="size-3.5" /> {u.plan_key ? 'Editar plano' : 'Dar plano'}</button>
-                  {!u.last_sign_in_at && <AccessLinkButton userId={u.id} name={u.full_name ?? u.email} />}
+                  <AccessLinkButton userId={u.id} name={u.full_name ?? u.email} reset={Boolean(u.last_sign_in_at)} />
                   {isPro && (u.professional_approved
                     ? <button className="btn-ghost !px-2.5 !py-1.5 text-xs" onClick={() => void run(supabase.rpc('admin_approve_professional', { _user: u.id, _approve: false }))}><CircleDashed className="size-3.5" /> Suspender registro</button>
                     : <button className="btn-outline !px-2.5 !py-1.5 text-xs" onClick={() => void run(supabase.rpc('admin_approve_professional', { _user: u.id, _approve: true }))}><BadgeCheck className="size-3.5" /> Aprovar registro</button>)}
