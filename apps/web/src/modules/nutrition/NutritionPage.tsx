@@ -1,6 +1,6 @@
 import {
-  Check, ChefHat, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Copy, MessageCircle, Pencil, Plus,
-  ShoppingCart, Sparkles, Trash2, UtensilsCrossed, X,
+  Check, ChefHat, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, ClipboardPaste, Copy, Inbox, Link2, MessageCircle,
+  Pencil, Plus, Share2, ShoppingCart, Sparkles, Trash2, UtensilsCrossed, X,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
@@ -16,22 +16,28 @@ export const MEALS: { key: MealType; label: string }[] = [
   { key: 'cafe', label: 'Café da manhã' }, { key: 'lanche', label: 'Lanche' },
   { key: 'almoco', label: 'Almoço' }, { key: 'jantar', label: 'Janta' },
 ]
-const MEAL_LABEL = Object.fromEntries(MEALS.map((m) => [m.key, m.label])) as Record<MealType, string>
+export const MEAL_LABEL = Object.fromEntries(MEALS.map((m) => [m.key, m.label])) as Record<MealType, string>
 const UNITS: { key: string; label: string }[] = [
   { key: 'unid', label: 'unid.' }, { key: 'g', label: 'g' }, { key: 'kg', label: 'kg' }, { key: 'ml', label: 'ml' },
   { key: 'l', label: 'L' }, { key: 'colher_sopa', label: 'colher (sopa)' }, { key: 'colher_cha', label: 'colher (chá)' },
   { key: 'xicara', label: 'xícara' }, { key: 'pitada', label: 'pitada' }, { key: 'a_gosto', label: 'a gosto' },
 ]
-const UNIT_LABEL = Object.fromEntries(UNITS.map((u) => [u.key, u.label])) as Record<string, string>
+export const UNIT_LABEL = Object.fromEntries(UNITS.map((u) => [u.key, u.label])) as Record<string, string>
 
 interface Ingredient { id?: string; name: string; quantity: number | null; unit: string | null; position: number }
 interface Recipe {
   id: string; owner_id: string; title: string; meal_types: MealType[]; servings: number; prep_minutes: number | null
   instructions: string | null; notes: string | null; recipe_ingredients: Ingredient[]
+  share_token: string | null; source_note: string | null
+}
+/** Receita lida pela IA (sem id), usada para preencher o formulário. */
+export interface RecipeDraft {
+  title: string; meal_types: MealType[]; servings: number; prep_minutes: number | null; instructions: string
+  ingredients: { name: string; quantity: number | null; unit: string }[]
 }
 interface PlanItem { id: string; plan_date: string; meal_type: MealType; recipe_id: string; servings: number; logged_food_id: string | null }
 
-const fmtNum = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(n < 10 ? 2 : 1).replace(/\.?0+$/, '').replace('.', ','))
+export const fmtNum = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(n < 10 ? 2 : 1).replace(/\.?0+$/, '').replace('.', ','))
 const parseNum = (s: string) => { const n = Number(String(s).replace(',', '.')); return Number.isFinite(n) && n > 0 ? n : null }
 
 // ------------------------------------------------------------------ datas (fuso de São Paulo)
@@ -52,15 +58,17 @@ function useNutrition(owner: string) {
 }
 
 // ------------------------------------------------------------------ formulário de receita
-function RecipeForm({ initial, onClose, onSaved }: { initial: Recipe | null; onClose: () => void; onSaved: () => void }) {
-  const [title, setTitle] = useState(initial?.title ?? '')
-  const [meals, setMeals] = useState<MealType[]>(initial?.meal_types ?? [])
-  const [servings, setServings] = useState(String(initial?.servings ?? 1).replace('.', ','))
-  const [prep, setPrep] = useState(initial?.prep_minutes != null ? String(initial.prep_minutes) : '')
-  const [instructions, setInstructions] = useState(initial?.instructions ?? '')
+function RecipeForm({ initial, draft, onClose, onSaved }: { initial: Recipe | null; draft?: RecipeDraft | null; onClose: () => void; onSaved: () => void }) {
+  const src = initial ?? draft
+  const srcIngredients = initial?.recipe_ingredients ?? draft?.ingredients ?? []
+  const [title, setTitle] = useState(src?.title ?? '')
+  const [meals, setMeals] = useState<MealType[]>(src?.meal_types ?? [])
+  const [servings, setServings] = useState(fmtNum(Number(src?.servings ?? 1)))
+  const [prep, setPrep] = useState(src?.prep_minutes != null ? String(src.prep_minutes) : '')
+  const [instructions, setInstructions] = useState(src?.instructions ?? '')
   const [rows, setRows] = useState<{ name: string; quantity: string; unit: string }[]>(
-    initial?.recipe_ingredients.length
-      ? initial.recipe_ingredients.map((i) => ({ name: i.name, quantity: i.quantity != null ? fmtNum(Number(i.quantity)) : '', unit: i.unit ?? 'unid' }))
+    srcIngredients.length
+      ? srcIngredients.map((i) => ({ name: i.name, quantity: i.quantity != null ? fmtNum(Number(i.quantity)) : '', unit: i.unit ?? 'unid' }))
       : [{ name: '', quantity: '', unit: 'unid' }],
   )
   const [error, setError] = useState('')
@@ -101,10 +109,11 @@ function RecipeForm({ initial, onClose, onSaved }: { initial: Recipe | null; onC
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center" onClick={onClose}>
       <form onSubmit={save} onClick={(e) => e.stopPropagation()} className="max-h-[92dvh] w-full max-w-xl overflow-y-auto rounded-t-3xl bg-white p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:rounded-3xl dark:bg-stone-900">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="font-display text-xl font-semibold">{initial ? 'Editar receita' : 'Nova receita'}</h2>
+          <h2 className="font-display text-xl font-semibold">{initial ? 'Editar receita' : draft ? 'Confira a receita' : 'Nova receita'}</h2>
           <button type="button" className="btn-ghost !p-2" onClick={onClose} aria-label="Fechar"><X className="size-5" /></button>
         </div>
         <div className="space-y-4">
+          {draft && <Alert kind="info">Lida pela IA a partir do texto colado. Confira quantidades e unidades antes de salvar.</Alert>}
           <div><label className="label" htmlFor="rt">Nome da receita</label><input id="rt" className="input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Ex.: Omelete de legumes" /></div>
           <div>
             <span className="label">Serve para</span>
@@ -150,11 +159,243 @@ function RecipeForm({ initial, onClose, onSaved }: { initial: Recipe | null; onC
   )
 }
 
+// ------------------------------------------------------------------ colar receita (IA)
+function PasteRecipe({ onClose, onParsed }: { onClose: () => void; onParsed: (d: RecipeDraft) => void }) {
+  const [text, setText] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  async function parse(e: FormEvent) {
+    e.preventDefault()
+    setBusy(true); setError('')
+    const { data, error } = await supabase.functions.invoke('recipe-parse', { body: { text } })
+    setBusy(false)
+    if (error) {
+      let detail = errorMessage(error)
+      try { detail = (await (error as { context?: Response }).context?.json())?.error ?? detail } catch { /* sem corpo */ }
+      return setError(detail)
+    }
+    onParsed(data.recipe as RecipeDraft)
+  }
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center" onClick={onClose}>
+      <form onSubmit={parse} onClick={(e) => e.stopPropagation()} className="max-h-[92dvh] w-full max-w-xl overflow-y-auto rounded-t-3xl bg-white p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:rounded-3xl dark:bg-stone-900">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="font-display text-xl font-semibold">Colar receita</h2>
+          <button type="button" className="btn-ghost !p-2" onClick={onClose} aria-label="Fechar"><X className="size-5" /></button>
+        </div>
+        <p className="mb-3 text-sm text-stone-500">Cole o texto da receita (de um site, mensagem ou livro). A IA separa ingredientes, quantidades e modo de preparo; você confere antes de salvar.</p>
+        <textarea className="input" rows={10} value={text} onChange={(e) => setText(e.target.value)} placeholder={'Bolo de cenoura\n\nIngredientes:\n3 cenouras médias\n4 ovos\n1 xícara de óleo\n...\n\nModo de preparo:\n...'} autoFocus />
+        {error && <div className="mt-3"><Alert>{error}</Alert></div>}
+        <div className="mt-4 flex gap-2">
+          <button className="btn-primary flex-1" disabled={busy || text.trim().length < 20}>{busy ? <><Spinner /> Lendo a receita…</> : <><Sparkles className="size-4" /> Ler receita</>}</button>
+          <button type="button" className="btn-ghost" onClick={onClose}>Cancelar</button>
+        </div>
+      </form>
+    </div>
+  )
+}
+
+// ------------------------------------------------------------------ compartilhar
+interface Person { id: string; name: string; relation: 'cliente' | 'profissional' }
+
+/** Pessoas da base: meus clientes (se sou profissional) e meus profissionais. */
+function useLinkedPeople() {
+  const { session } = useAuth()
+  const [people, setPeople] = useState<Person[] | null>(null)
+  useEffect(() => {
+    const uid = session!.user.id
+    void (async () => {
+      const { data: links } = await supabase.from('professional_client_links').select('professional_id, client_id').in('status', ['invited', 'active'])
+        .or(`professional_id.eq.${uid},client_id.eq.${uid}`)
+      const rows = (links ?? []) as { professional_id: string; client_id: string }[]
+      const clientIds = rows.filter((l) => l.professional_id === uid).map((l) => l.client_id)
+      const proIds = rows.filter((l) => l.client_id === uid).map((l) => l.professional_id)
+      const [cp, pp] = await Promise.all([
+        clientIds.length ? supabase.from('profiles').select('id, full_name').in('id', clientIds) : Promise.resolve({ data: [] }),
+        proIds.length ? supabase.from('professional_profiles').select('user_id, public_name').in('user_id', proIds) : Promise.resolve({ data: [] }),
+      ])
+      setPeople([
+        ...((cp.data ?? []) as { id: string; full_name: string | null }[]).map((p) => ({ id: p.id, name: p.full_name ?? 'Cliente', relation: 'cliente' as const })),
+        ...((pp.data ?? []) as { user_id: string; public_name: string }[]).map((p) => ({ id: p.user_id, name: p.public_name, relation: 'profissional' as const })),
+      ].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')))
+    })()
+  }, [session])
+  return people
+}
+
+function randomToken() {
+  const b = new Uint8Array(18)
+  crypto.getRandomValues(b)
+  return Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('')
+}
+
+function ShareRecipe({ recipe, onClose, onChanged }: { recipe: Recipe; onClose: () => void; onChanged: () => void }) {
+  const people = useLinkedPeople()
+  const [token, setToken] = useState(recipe.share_token)
+  const [sharedWith, setSharedWith] = useState<Set<string> | null>(null)
+  const [error, setError] = useState('')
+  const [copied, setCopied] = useState(false)
+  const url = token ? `${location.origin}/receita/${token}` : ''
+
+  useEffect(() => {
+    supabase.from('recipe_shares').select('shared_with').eq('recipe_id', recipe.id)
+      .then(({ data }) => setSharedWith(new Set((data ?? []).map((x) => x.shared_with as string))))
+  }, [recipe.id])
+
+  async function setLink(on: boolean) {
+    setError('')
+    const next = on ? randomToken() : null
+    const { error } = await supabase.from('recipes').update({ share_token: next }).eq('id', recipe.id)
+    if (error) return setError(errorMessage(error))
+    setToken(next); onChanged()
+  }
+  async function togglePerson(id: string) {
+    if (!sharedWith) return
+    setError('')
+    const on = sharedWith.has(id)
+    const { error } = on
+      ? await supabase.from('recipe_shares').delete().eq('recipe_id', recipe.id).eq('shared_with', id)
+      : await supabase.from('recipe_shares').insert({ recipe_id: recipe.id, shared_with: id })
+    if (error) return setError(errorMessage(error))
+    setSharedWith((s) => { const n = new Set(s); if (on) n.delete(id); else n.add(id); return n })
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center" onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} className="max-h-[92dvh] w-full max-w-lg overflow-y-auto rounded-t-3xl bg-white p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:rounded-3xl dark:bg-stone-900">
+        <div className="mb-4 flex items-center justify-between">
+          <div><h2 className="font-display text-xl font-semibold">Compartilhar</h2><p className="text-sm text-stone-500">{recipe.title}</p></div>
+          <button className="btn-ghost !p-2" onClick={onClose} aria-label="Fechar"><X className="size-5" /></button>
+        </div>
+        {error && <div className="mb-3"><Alert>{error}</Alert></div>}
+
+        <section className="rounded-2xl border border-stone-200 p-4 dark:border-stone-800">
+          <div className="flex items-center gap-2 font-medium"><Link2 className="size-4 text-brand-600" /> Link da receita</div>
+          <p className="mt-1 text-xs text-stone-500">Quem tiver o link vê só esta receita (não vê seu nome nem outros dados). Pode desligar quando quiser.</p>
+          {token ? (
+            <>
+              <p className="mt-2 break-all rounded-lg bg-stone-100 px-2 py-1.5 text-xs dark:bg-stone-800">{url}</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <a className="btn-primary !py-2" href={`https://wa.me/?text=${encodeURIComponent(`Receita: ${recipe.title}\n${url}`)}`} target="_blank" rel="noreferrer"><MessageCircle className="size-4" /> WhatsApp</a>
+                <button className="btn-outline !py-2" onClick={() => { void navigator.clipboard.writeText(url); setCopied(true) }}>{copied ? <Check className="size-4" /> : <Copy className="size-4" />} {copied ? 'Copiado' : 'Copiar'}</button>
+                <button className="btn-ghost !py-2 text-red-700" onClick={() => void setLink(false)}>Desligar link</button>
+              </div>
+            </>
+          ) : <button className="btn-outline mt-2" onClick={() => void setLink(true)}><Link2 className="size-4" /> Criar link</button>}
+        </section>
+
+        <section className="mt-4 rounded-2xl border border-stone-200 p-4 dark:border-stone-800">
+          <div className="flex items-center gap-2 font-medium"><Share2 className="size-4 text-brand-600" /> Enviar para alguém da sua base</div>
+          <p className="mt-1 text-xs text-stone-500">A receita aparece em "Compartilhadas comigo" da pessoa, que pode salvar uma cópia.</p>
+          <div className="mt-2 divide-y divide-stone-100 dark:divide-stone-800">
+            {people === null || sharedWith === null ? <Spinner className="size-5" /> : people.length === 0 ? (
+              <p className="py-2 text-sm text-stone-500">Você ainda não tem clientes ou profissionais vinculados.</p>
+            ) : people.map((p) => (
+              <label key={p.id} className="flex cursor-pointer items-center gap-3 py-2.5">
+                <input type="checkbox" className="size-5 accent-brand-700" checked={sharedWith.has(p.id)} onChange={() => void togglePerson(p.id)} />
+                <span className="flex-1 text-sm font-medium">{p.name}</span>
+                <span className="text-xs text-stone-500">{p.relation}</span>
+              </label>
+            ))}
+          </div>
+        </section>
+      </div>
+    </div>
+  )
+}
+
+interface SharedRecipe { created_at: string; recipes: Recipe & { recipe_ingredients: Ingredient[] } }
+
+function SharedWithMe({ onSaved }: { onSaved: () => void }) {
+  const { session } = useAuth()
+  const [items, setItems] = useState<SharedRecipe[] | null>(null)
+  const [senders, setSenders] = useState<Record<string, string>>({})
+  const [open, setOpen] = useState<string | null>(null)
+  const [msg, setMsg] = useState('')
+  const load = useCallback(async () => {
+    const { data } = await supabase.from('recipe_shares').select('created_at, owner_id, recipes(*, recipe_ingredients(*))')
+      .eq('shared_with', session!.user.id).order('created_at', { ascending: false })
+    const rows = (data ?? []) as unknown as (SharedRecipe & { owner_id: string })[]
+    setItems(rows.filter((r) => r.recipes))
+    const ids = [...new Set(rows.map((r) => r.owner_id))]
+    if (ids.length) {
+      const [pp, pr] = await Promise.all([
+        supabase.from('professional_profiles').select('user_id, public_name').in('user_id', ids),
+        supabase.from('profiles').select('id, full_name').in('id', ids),
+      ])
+      const map: Record<string, string> = {}
+      for (const p of (pr.data ?? []) as { id: string; full_name: string }[]) map[p.id] = p.full_name
+      for (const p of (pp.data ?? []) as { user_id: string; public_name: string }[]) map[p.user_id] = p.public_name
+      setSenders(map)
+    }
+  }, [session])
+  useEffect(() => { void load() }, [load])
+
+  async function save(r: Recipe) {
+    setMsg('')
+    const { error } = await supabase.rpc('copy_recipe', { _recipe_id: r.id })
+    if (error) return setMsg(errorMessage(error))
+    setMsg(`"${r.title}" salva nas suas receitas.`)
+    onSaved()
+  }
+  async function dismiss(r: Recipe) {
+    await supabase.from('recipe_shares').delete().eq('recipe_id', r.id).eq('shared_with', session!.user.id)
+    void load()
+  }
+
+  if (!items || items.length === 0) return null
+  return (
+    <section className="mb-6">
+      <h3 className="mb-2 flex items-center gap-2 text-sm font-medium uppercase tracking-wide text-stone-500"><Inbox className="size-4" /> Compartilhadas comigo</h3>
+      {msg && <div className="mb-2"><Alert kind="success">{msg}</Alert></div>}
+      <div className="space-y-2">
+        {items.map(({ recipes: r, ...rest }) => {
+          const ownerId = (rest as unknown as { owner_id: string }).owner_id
+          return (
+            <div key={r.id} className="card !border-brand-200 !p-0 dark:!border-brand-900">
+              <button className="flex w-full items-center gap-3 px-4 py-3 text-left" onClick={() => setOpen(open === r.id ? null : r.id)}>
+                <div className="min-w-0 flex-1">
+                  <div className="font-medium">{r.title}</div>
+                  <div className="text-xs text-stone-500">de {senders[ownerId] ?? 'seu profissional'} · {r.recipe_ingredients.length} ingrediente(s)</div>
+                </div>
+                <ChevronDown className={`size-4 text-stone-400 transition ${open === r.id ? 'rotate-180' : ''}`} />
+              </button>
+              {open === r.id && (
+                <div className="border-t border-stone-100 px-4 py-3 text-sm dark:border-stone-800">
+                  <IngredientList items={[...r.recipe_ingredients].sort((a, b) => a.position - b.position)} />
+                  {r.instructions && <p className="mt-3 whitespace-pre-wrap text-stone-600 dark:text-stone-300">{r.instructions}</p>}
+                </div>
+              )}
+              <div className="flex gap-2 border-t border-stone-100 px-4 py-2.5 dark:border-stone-800">
+                <button className="btn-primary !px-3 !py-1.5 text-sm" onClick={() => void save(r)}><Plus className="size-4" /> Salvar nas minhas receitas</button>
+                <button className="btn-ghost !px-3 !py-1.5 text-sm" onClick={() => void dismiss(r)}>Dispensar</button>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
+export function IngredientList({ items }: { items: { name: string; quantity: number | null; unit: string | null }[] }) {
+  return (
+    <ul className="space-y-1">
+      {items.map((i, k) => (
+        <li key={k} className="flex gap-2"><span className="w-28 shrink-0 text-stone-500">{i.quantity != null ? `${fmtNum(Number(i.quantity))} ${UNIT_LABEL[i.unit ?? ''] ?? ''}` : UNIT_LABEL[i.unit ?? ''] ?? ''}</span><span>{i.name}</span></li>
+      ))}
+    </ul>
+  )
+}
+
 // ------------------------------------------------------------------ aba Receitas
 function RecipesTab({ recipes, reload, readOnly }: { recipes: Recipe[]; reload: () => void; readOnly: boolean }) {
   const [filter, setFilter] = useState<MealType | 'todas'>('todas')
   const [open, setOpen] = useState<string | null>(null)
   const [editing, setEditing] = useState<Recipe | 'new' | null>(null)
+  const [draft, setDraft] = useState<RecipeDraft | null>(null)
+  const [pasting, setPasting] = useState(false)
+  const [sharing, setSharing] = useState<Recipe | null>(null)
   const [error, setError] = useState('')
   const shown = recipes.filter((r) => filter === 'todas' || r.meal_types.includes(filter))
 
@@ -173,9 +414,15 @@ function RecipesTab({ recipes, reload, readOnly }: { recipes: Recipe[]; reload: 
             <button key={k} onClick={() => setFilter(k as MealType | 'todas')} className={`rounded-lg px-3 py-1.5 text-sm font-medium ${filter === k ? 'bg-stone-900 text-white dark:bg-stone-100 dark:text-stone-900' : 'text-stone-600 hover:bg-stone-200/60 dark:text-stone-400 dark:hover:bg-stone-800'}`}>{l}</button>
           ))}
         </div>
-        {!readOnly && <button className="btn-primary" onClick={() => setEditing('new')}><Plus className="size-4" /> Nova receita</button>}
+        {!readOnly && (
+          <div className="flex gap-2">
+            <button className="btn-outline" onClick={() => setPasting(true)}><ClipboardPaste className="size-4" /> Colar receita</button>
+            <button className="btn-primary" onClick={() => { setDraft(null); setEditing('new') }}><Plus className="size-4" /> Nova</button>
+          </div>
+        )}
       </div>
       {error && <div className="mb-3"><Alert>{error}</Alert></div>}
+      {!readOnly && <SharedWithMe onSaved={reload} />}
       {shown.length === 0 && (
         <EmptyState icon={ChefHat} title={recipes.length ? 'Nenhuma receita nesta refeição' : 'Nenhuma receita ainda'}>
           {readOnly ? 'O cliente ainda não cadastrou receitas.' : 'Cadastre suas receitas com ingredientes e porções. Depois é só montar a semana.'}
@@ -190,6 +437,7 @@ function RecipesTab({ recipes, reload, readOnly }: { recipes: Recipe[]; reload: 
                 <div className="min-w-0 flex-1">
                   <div className="font-medium">{r.title}</div>
                   <div className="text-xs text-stone-500">
+                    {r.share_token && <span className="mr-1 inline-flex items-center gap-0.5 text-brand-700 dark:text-brand-300"><Link2 className="size-3" /> link ativo ·</span>}
                     {r.meal_types.map((m) => MEAL_LABEL[m]).join(' · ')} · rende {fmtNum(Number(r.servings))} porç{Number(r.servings) === 1 ? 'ão' : 'ões'}
                     {r.prep_minutes ? ` · ${r.prep_minutes} min` : ''} · {r.recipe_ingredients.length} ingrediente(s)
                   </div>
@@ -198,14 +446,11 @@ function RecipesTab({ recipes, reload, readOnly }: { recipes: Recipe[]; reload: 
               </button>
               {isOpen && (
                 <div className="border-t border-stone-100 px-4 py-3 text-sm dark:border-stone-800">
-                  <ul className="space-y-1">
-                    {r.recipe_ingredients.map((i, k) => (
-                      <li key={k} className="flex gap-2"><span className="w-28 shrink-0 text-stone-500">{i.quantity != null ? `${fmtNum(Number(i.quantity))} ${UNIT_LABEL[i.unit ?? ''] ?? ''}` : UNIT_LABEL[i.unit ?? ''] ?? ''}</span><span>{i.name}</span></li>
-                    ))}
-                  </ul>
+                  <IngredientList items={r.recipe_ingredients} />
                   {r.instructions && <p className="mt-3 whitespace-pre-wrap text-stone-600 dark:text-stone-300">{r.instructions}</p>}
                   {!readOnly && (
-                    <div className="mt-3 flex gap-2">
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button className="btn-primary !px-3 !py-1.5" onClick={() => setSharing(r)}><Share2 className="size-4" /> Compartilhar</button>
                       <button className="btn-outline !px-3 !py-1.5" onClick={() => setEditing(r)}><Pencil className="size-4" /> Editar</button>
                       <button className="btn-danger !px-3 !py-1.5" onClick={() => void remove(r)}><Trash2 className="size-4" /> Excluir</button>
                     </div>
@@ -216,7 +461,9 @@ function RecipesTab({ recipes, reload, readOnly }: { recipes: Recipe[]; reload: 
           )
         })}
       </div>
-      {editing && <RecipeForm initial={editing === 'new' ? null : editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); reload() }} />}
+      {editing && <RecipeForm initial={editing === 'new' ? null : editing} draft={editing === 'new' ? draft : null} onClose={() => { setEditing(null); setDraft(null) }} onSaved={() => { setEditing(null); setDraft(null); reload() }} />}
+      {pasting && <PasteRecipe onClose={() => setPasting(false)} onParsed={(d) => { setPasting(false); setDraft(d); setEditing('new') }} />}
+      {sharing && <ShareRecipe recipe={sharing} onClose={() => setSharing(null)} onChanged={reload} />}
     </div>
   )
 }

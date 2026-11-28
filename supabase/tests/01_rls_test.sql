@@ -395,4 +395,42 @@ set local request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000c';
 select test.ok((select count(*) from public.recipes) = 0, 'Admin não vê receitas');
 commit;
 
+-- ============================================================ Receitas compartilhadas
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000f1';
+insert into public.recipes (id, title, meal_types, servings, share_token) values ('30000000-0000-0000-0000-000000000002', 'Salada da nutri', '{almoco}', 1, 'token-publico-receita-12345');
+insert into public.recipe_ingredients (recipe_id, name, quantity, unit) values ('30000000-0000-0000-0000-000000000002', 'Alface', 100, 'g');
+insert into public.recipe_shares (recipe_id, shared_with) values ('30000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-0000000000e1');
+select test.fails($$insert into public.recipe_shares (recipe_id, shared_with) values ('30000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-00000000000d')$$, 'Só envia receita para cliente/profissional vinculado');
+select test.fails($$insert into public.recipe_shares (recipe_id, shared_with) values ('30000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000000e1')$$, 'Não envia receita de outra pessoa');
+commit;
+
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000e1';
+select test.ok((select count(*) from public.recipes where id = '30000000-0000-0000-0000-000000000002') = 1
+  and (select count(*) from public.recipe_ingredients where recipe_id = '30000000-0000-0000-0000-000000000002') = 1, 'Cliente vê receita e ingredientes enviados pelo profissional');
+update public.recipes set title = 'alterada' where id = '30000000-0000-0000-0000-000000000002';
+select public.copy_recipe('30000000-0000-0000-0000-000000000002');
+select test.ok((select count(*) from public.recipes where owner_id = '00000000-0000-0000-0000-0000000000e1' and title = 'Salada da nutri') = 1, 'Cliente salva cópia nas próprias receitas');
+commit;
+select test.ok((select title from public.recipes where id = '30000000-0000-0000-0000-000000000002') = 'Salada da nutri', 'Destinatário não altera a receita original');
+
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000d';
+select test.ok((select count(*) from public.recipes where id = '30000000-0000-0000-0000-000000000002') = 0, 'Estranho não vê receita enviada a outra pessoa');
+select test.fails($$select public.copy_recipe('30000000-0000-0000-0000-000000000002')$$, 'Estranho não copia receita sem acesso');
+select public.copy_recipe(null, 'token-publico-receita-12345');
+select test.ok((select count(*) from public.recipes where owner_id = '00000000-0000-0000-0000-00000000000d') = 1, 'Quem tem o link salva a receita');
+commit;
+
+begin;
+set local role anon;
+select test.ok((public.get_shared_recipe('token-publico-receita-12345') ->> 'title') = 'Salada da nutri', 'Link público mostra a receita');
+select test.ok(public.get_shared_recipe('token-errado-0000000000000') is null, 'Link inválido não mostra nada');
+select test.ok((public.get_shared_recipe('token-publico-receita-12345') ? 'owner_id') = false, 'Link público não expõe o autor');
+commit;
+
 \echo 'TODOS OS TESTES PASSARAM'

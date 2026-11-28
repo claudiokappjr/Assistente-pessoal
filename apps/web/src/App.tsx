@@ -15,6 +15,7 @@ import { SettingsPage } from './pages/app/Settings'
 import { BecomeProfessionalPage, ProClientDetailPage, ProClientsPage, ProDashboardPage, ProProfilePage } from './pages/pro/Pro'
 import { ForgotPasswordPage, LoginPage, ResetPasswordPage, SignupPage } from './pages/public/Auth'
 import { LandingPage, LegalPage, ProfessionalsCatalogPage } from './pages/public/Landing'
+import { SharedRecipePage } from './pages/public/SharedRecipe'
 
 
 export default function App() {
@@ -31,6 +32,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<LandingPage />} />
           <Route path="/profissionais" element={<ProfessionalsCatalogPage />} />
+          <Route path="/receita/:token" element={<SharedRecipePage />} />
           <Route path="/privacidade" element={<LegalPage kind="privacidade" />} />
           <Route path="/termos" element={<LegalPage kind="termos" />} />
           <Route path="/entrar" element={<RedirectIfAuthed><LoginPage /></RedirectIfAuthed>} />
