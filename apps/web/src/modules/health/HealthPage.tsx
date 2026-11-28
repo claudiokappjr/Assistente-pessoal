@@ -1,5 +1,5 @@
 import {
-  Activity, CalendarClock, Check, ChevronLeft, FileText, FlaskConical, LineChart, NotebookPen, Paperclip, Pencil, Pill, Plus,
+  Activity, CalendarClock, Check, ChevronDown, ChevronLeft, FileText, FlaskConical, LineChart, NotebookPen, Paperclip, Pencil, Pill, Plus,
   Sparkles, Stethoscope, Trash2, Upload, X,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
@@ -230,7 +230,7 @@ function ExamsTab({ owner, readOnly }: { owner: string; readOnly: boolean }) {
       ))}
       {view === 'graficos' && <MarkersView exams={exams} />}
       {viewing && exams.find((e) => e.id === viewing) && (
-        <ExamView exam={exams.find((e) => e.id === viewing)!} readOnly={readOnly} onClose={() => setViewing(null)}
+        <ExamView exam={exams.find((e) => e.id === viewing)!} markers={buildMarkers(exams)} readOnly={readOnly} onClose={() => setViewing(null)}
           onEdit={() => { setEditing(exams.find((e) => e.id === viewing)!); setViewing(null) }}
           onReread={() => void reread(exams.find((e) => e.id === viewing)!)} />
       )}
@@ -457,7 +457,8 @@ function RangeGauge({ value, lo, hi, unit, delay = 0 }: { value: number; lo: num
   )
 }
 
-function ResultCard({ r, previous, delay }: { r: LabResult; previous: LabResult[]; delay: number }) {
+function ResultCard({ r, previous, delay, history }: { r: LabResult; previous: LabResult[]; delay: number; history: Point[] }) {
+  const [open, setOpen] = useState(false)
   const flag = effFlag(r)
   const hasRange = r.value != null && (r.ref_low != null || r.ref_high != null)
   const prevNum = previous.filter((p) => p.value != null)
@@ -478,23 +479,52 @@ function ResultCard({ r, previous, delay }: { r: LabResult; previous: LabResult[
       </div>
       {hasRange && <div className="mt-1"><RangeGauge value={r.value!} lo={r.ref_low} hi={r.ref_high} unit={r.unit} delay={delay} /></div>}
       {!hasRange && flag && flag !== 'normal' && <span className={`badge mt-2 ${FLAG_STYLE[flag]}`}>{FLAG_LABEL[flag]}</span>}
-      {previous.length > 0 && (
-        <div className="mt-3 flex items-center gap-3 rounded-xl bg-stone-50 px-3 py-2 text-xs dark:bg-stone-800/60">
+      {(previous.length > 0 || history.length > 1) && (
+        <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open}
+          className="mt-3 flex w-full items-center gap-3 rounded-xl bg-stone-50 px-3 py-2 text-left text-xs transition hover:bg-stone-100 dark:bg-stone-800/60 dark:hover:bg-stone-800">
           {series.length > 1 && <Sparkline values={series} />}
           <div className="min-w-0 flex-1">
-            <div className="text-stone-500">Anteriores: {previous.slice(-4).map((p) => `${br(p.measured_on)} → ${p.value != null ? fmt(p.value) : p.value_text}`).join(' · ')}</div>
+            {previous.length > 0 && <div className="text-stone-500">Anteriores: {previous.slice(-4).map((p) => `${br(p.measured_on)} → ${p.value != null ? fmt(p.value) : p.value_text}`).join(' · ')}</div>}
             {diff != null && diff !== 0 && (
               <div className="font-medium text-stone-700 dark:text-stone-300">{diff > 0 ? '▲ Subiu' : '▼ Desceu'} {fmt(+Math.abs(diff).toFixed(2))}{r.unit ? ` ${r.unit}` : ''} desde {br(last.measured_on)}</div>
             )}
             {diff === 0 && <div className="font-medium text-stone-700 dark:text-stone-300">= Igual ao de {br(last.measured_on)}</div>}
+            {previous.length === 0 && <div className="text-stone-500">{history.length} medições em outros exames</div>}
           </div>
-        </div>
+          <span className="flex shrink-0 items-center gap-1 font-medium text-brand-700 dark:text-brand-300">
+            <LineChart className="size-4" /> {open ? 'Fechar' : 'Ver gráfico'}
+            <ChevronDown className={`size-4 transition-transform ${open ? 'rotate-180' : ''}`} />
+          </span>
+        </button>
       )}
+      {open && history.length > 0 && <InlineHistory points={history} />}
     </li>
   )
 }
 
-function ExamView({ exam, readOnly, onClose, onEdit, onReread }: { exam: LabExam; readOnly: boolean; onClose: () => void; onEdit: () => void; onReread: () => void }) {
+/** Gráfico de evolução dentro do cartão do resultado (todas as medições daquele exame). */
+function InlineHistory({ points }: { points: Point[] }) {
+  const unitCount = new Map<string, number>()
+  points.forEach((p) => unitCount.set(p.unit ?? '', (unitCount.get(p.unit ?? '') ?? 0) + 1))
+  const unit = [...unitCount.entries()].sort((a, b) => b[1] - a[1])[0][0]
+  const pts = points.filter((p) => (p.unit ?? '') === unit)
+  const lo = [...pts].reverse().find((p) => p.ref_low != null)?.ref_low ?? null
+  const hi = [...pts].reverse().find((p) => p.ref_high != null)?.ref_high ?? null
+  return (
+    <div className="mt-3 rounded-xl border border-stone-200 p-3 motion-safe:animate-[fadein_.35s_ease-out] dark:border-stone-800">
+      <TrendChart points={pts} lo={lo} hi={hi} unit={unit} />
+      <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-stone-500">
+        {[...pts].reverse().map((p, i) => {
+          const f = p.flag && p.flag !== 'normal' ? p.flag : null
+          return <li key={i} className="tabular-nums">{br(p.date)}: <b className={f === 'baixo' ? ZONE.baixo.text : f ? ZONE.alto.text : 'text-stone-800 dark:text-stone-200'}>{fmt(p.value)}</b></li>
+        })}
+      </ul>
+      <p className="mt-1 text-[11px] text-stone-400">Faixa verde clara = referência do laboratório. Pontos vermelhos = fora da faixa.</p>
+    </div>
+  )
+}
+
+function ExamView({ exam, markers, readOnly, onClose, onEdit, onReread }: { exam: LabExam; markers: Marker[]; readOnly: boolean; onClose: () => void; onEdit: () => void; onReread: () => void }) {
   const [onlyOut, setOnlyOut] = useState(false)
   const cur = current(exam)
   const counts = { normal: 0, alto: 0, baixo: 0, alterado: 0 }
@@ -528,7 +558,8 @@ function ExamView({ exam, readOnly, onClose, onEdit, onReread }: { exam: LabExam
           {[...groups.entries()].map(([g, rs]) => (
             <section key={g}>
               {groups.size > 1 && <h3 className="mb-2 text-sm font-semibold text-stone-500">{g}</h3>}
-              <ul className="space-y-2">{rs.map((r) => <ResultCard key={r.id ?? r.position} r={r} previous={previousOf(exam, r)} delay={Math.min(i++, 8) * 90} />)}</ul>
+              <ul className="space-y-2">{rs.map((r) => <ResultCard key={r.id ?? r.position} r={r} previous={previousOf(exam, r)} delay={Math.min(i++, 8) * 90}
+                history={markers.find((m) => m.key === (r.marker_key ?? r.marker.trim().toLowerCase()))?.points ?? []} />)}</ul>
             </section>
           ))}
         </div>
@@ -547,32 +578,35 @@ function ExamView({ exam, readOnly, onClose, onEdit, onReread }: { exam: LabExam
 // ------------------------------------------------------------------ evolução por marcador
 interface Point { date: string; value: number; unit: string | null; ref_low: number | null; ref_high: number | null; flag: Flag | null; checked: boolean; previous: boolean }
 
-function MarkersView({ exams }: { exams: LabExam[] }) {
-  const markers = useMemo(() => {
-    const map = new Map<string, { name: string; points: Point[] }>()
-    for (const e of exams) {
-      if (e.status === 'falhou' || e.status === 'processando') continue
-      for (const r of e.lab_results) {
-        if (r.value == null) continue
-        const key = r.marker_key ?? r.marker.trim().toLowerCase()
-        const m = map.get(key) ?? { name: r.marker, points: [] }
-        const date = r.is_previous ? r.measured_on! : e.collected_on
-        m.points.push({ date, value: Number(r.value), unit: r.unit, ref_low: r.ref_low, ref_high: r.ref_high, flag: r.is_previous ? null : effFlag(r), checked: e.status === 'conferido', previous: Boolean(r.is_previous) })
-        if (!r.is_previous) m.name = r.marker
-        map.set(key, m)
-      }
+type Marker = { key: string; name: string; points: Point[] }
+function buildMarkers(exams: LabExam[]): Marker[] {
+  const map = new Map<string, { name: string; points: Point[] }>()
+  for (const e of exams) {
+    if (e.status === 'falhou' || e.status === 'processando') continue
+    for (const r of e.lab_results) {
+      if (r.value == null) continue
+      const key = r.marker_key ?? r.marker.trim().toLowerCase()
+      const m = map.get(key) ?? { name: r.marker, points: [] }
+      const date = r.is_previous ? r.measured_on! : e.collected_on
+      m.points.push({ date, value: Number(r.value), unit: r.unit, ref_low: r.ref_low, ref_high: r.ref_high, flag: r.is_previous ? null : effFlag(r), checked: e.status === 'conferido', previous: Boolean(r.is_previous) })
+      if (!r.is_previous) m.name = r.marker
+      map.set(key, m)
     }
-    return [...map.entries()].map(([key, m]) => {
-      // Mesma data em dois exames: vale o resultado do próprio exame, não o "anterior" copiado de outro laudo.
-      const byDate = new Map<string, Point>()
-      for (const p of m.points) { const o = byDate.get(p.date); if (!o || (o.previous && !p.previous)) byDate.set(p.date, p) }
-      const points = [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date))
-      const lo = [...points].reverse().find((p) => p.ref_low != null)?.ref_low ?? null
-      const hi = [...points].reverse().find((p) => p.ref_high != null)?.ref_high ?? null
-      return { key, name: m.name, points: points.map((p) => (p.previous ? { ...p, flag: autoFlag(p.value, lo, hi, null) } : p)) }
-    })
-      .sort((a, b) => b.points.length - a.points.length || a.name.localeCompare(b.name))
-  }, [exams])
+  }
+  return [...map.entries()].map(([key, m]) => {
+    // Mesma data em dois exames: vale o resultado do próprio exame, não o "anterior" copiado de outro laudo.
+    const byDate = new Map<string, Point>()
+    for (const p of m.points) { const o = byDate.get(p.date); if (!o || (o.previous && !p.previous)) byDate.set(p.date, p) }
+    const points = [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date))
+    const lo = [...points].reverse().find((p) => p.ref_low != null)?.ref_low ?? null
+    const hi = [...points].reverse().find((p) => p.ref_high != null)?.ref_high ?? null
+    return { key, name: m.name, points: points.map((p) => (p.previous ? { ...p, flag: autoFlag(p.value, lo, hi, null) } : p)) }
+  })
+    .sort((a, b) => b.points.length - a.points.length || a.name.localeCompare(b.name))
+}
+
+function MarkersView({ exams }: { exams: LabExam[] }) {
+  const markers = useMemo(() => buildMarkers(exams), [exams])
   const [selected, setSelected] = useState<string | null>(null)
   const [q, setQ] = useState('')
 
