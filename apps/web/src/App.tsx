@@ -4,7 +4,7 @@ import { RedirectIfAuthed, RequireAuth } from './auth/guards'
 import { AppLayout } from './components/AppLayout'
 import { Alert, ComingSoon } from './components/ui'
 import { supabaseConfigured } from './lib/supabase'
-import { AdminAuditPage, AdminCatalogPage, AdminDashboardPage, AdminIntegrationsPage, AdminUsersPage } from './pages/admin/Admin'
+import { AdminAuditPage, AdminCatalogPage, AdminDashboardPage, AdminIntegrationsPage, AdminLinksPage, AdminUsersPage } from './pages/admin/Admin'
 import { DashboardPage } from './pages/app/Dashboard'
 import { AssistantPage, InboxPage } from './pages/app/Inbox'
 import { MODULES } from './modules/config'
@@ -68,6 +68,7 @@ export default function App() {
           <Route path="/admin" element={<RequireAuth role="admin"><AppLayout area="admin" /></RequireAuth>}>
             <Route index element={<AdminDashboardPage />} />
             <Route path="usuarios" element={<AdminUsersPage />} />
+            <Route path="vinculos" element={<AdminLinksPage />} />
             <Route path="catalogo" element={<AdminCatalogPage />} />
             <Route path="integracoes" element={<AdminIntegrationsPage />} />
             <Route path="auditoria" element={<AdminAuditPage />} />

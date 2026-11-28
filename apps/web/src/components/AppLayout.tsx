@@ -1,6 +1,6 @@
 import {
   Activity, Apple, BarChart3, Brain, Briefcase, CalendarDays, CircleUser, Dumbbell, HeartPulse, Home, Inbox,
-  LayoutGrid, LogOut, Menu, MessageCircle, Moon, ScrollText, Settings, Shield, Sparkles, UserPlus, Users, Wallet, X,
+  LayoutGrid, Link2, LogOut, Menu, MessageCircle, Moon, ScrollText, Settings, Shield, Sparkles, UserPlus, Users, Wallet, X,
   type LucideIcon,
 } from 'lucide-react'
 import { useState } from 'react'
@@ -42,6 +42,7 @@ const NAV: Record<Area, Item[]> = {
   admin: [
     { to: '/admin', label: 'Indicadores', icon: BarChart3, end: true },
     { to: '/admin/usuarios', label: 'Usuários', icon: Users },
+    { to: '/admin/vinculos', label: 'Vínculos', icon: Link2 },
     { to: '/admin/catalogo', label: 'Planos e preços', icon: Briefcase },
     { to: '/admin/integracoes', label: 'Integrações', icon: MessageCircle },
     { to: '/admin/auditoria', label: 'Auditoria', icon: ScrollText },
@@ -52,7 +53,7 @@ const NAV: Record<Area, Item[]> = {
 const MOBILE: Record<Area, string[]> = {
   app: ['/app', '/app/caixa-de-entrada', '/app/agenda', '/app/configuracoes'],
   pro: ['/pro', '/pro/clientes', '/pro/agenda', '/pro/perfil'],
-  admin: ['/admin', '/admin/usuarios', '/admin/catalogo', '/admin/auditoria'],
+  admin: ['/admin', '/admin/usuarios', '/admin/vinculos', '/admin/auditoria'],
 }
 
 const AREA_LABEL: Record<Area, string> = { app: 'Pessoal', pro: 'Profissional', admin: 'Administração' }

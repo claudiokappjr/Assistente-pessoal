@@ -356,3 +356,105 @@ export function AdminAuditPage() {
     </div>
   )
 }
+
+// ------------------------------------------------------------------ Vínculos profissional ↔ paciente
+interface AdminLink {
+  id: string; professional_id: string; professional_name: string | null; professional_email: string
+  client_id: string; client_name: string | null; client_email: string; status: 'invited' | 'active' | 'ended'
+  created_at: string; accepted_at: string | null; shared_modules: string[]
+}
+const LINK_STATUS: Record<AdminLink['status'], { text: string; cls: string }> = {
+  active: { text: 'Ativo', cls: 'bg-brand-100 text-brand-800 dark:bg-brand-900 dark:text-brand-200' },
+  invited: { text: 'Convite pendente', cls: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300' },
+  ended: { text: 'Encerrado', cls: 'bg-stone-100 text-stone-600 dark:bg-stone-800 dark:text-stone-300' },
+}
+
+export function AdminLinksPage() {
+  const [users, setUsers] = useState<AdminUser[] | null>(null)
+  const [links, setLinks] = useState<AdminLink[] | null>(null)
+  const [modules, setModules] = useState<Record<string, string>>({})
+  const [pro, setPro] = useState('')
+  const [client, setClient] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState<{ kind: 'error' | 'success'; text: string } | null>(null)
+
+  const load = useCallback(async () => {
+    const [{ data: u, error: ue }, { data: l, error: le }, { data: m }] = await Promise.all([
+      supabase.rpc('admin_list_users'), supabase.rpc('admin_list_links'), supabase.from('modules').select('key, name'),
+    ])
+    if (ue || le) setMsg({ kind: 'error', text: errorMessage(ue ?? le) })
+    setUsers((u ?? []) as AdminUser[]); setLinks((l ?? []) as AdminLink[])
+    setModules(Object.fromEntries((m ?? []).map((x) => [x.key, x.name])))
+  }, [])
+  useEffect(() => { void load() }, [load])
+
+  const pros = (users ?? []).filter((u) => u.roles.includes('professional'))
+  const label = (u: AdminUser) => `${u.full_name || 'Sem nome'} — ${u.email}`
+
+  async function link(e: FormEvent) {
+    e.preventDefault()
+    if (!pro || !client) return setMsg({ kind: 'error', text: 'Escolha o profissional e o paciente.' })
+    setBusy(true); setMsg(null)
+    const { error } = await supabase.rpc('admin_link_client', { _professional: pro, _client: client })
+    setBusy(false)
+    if (error) return setMsg({ kind: 'error', text: errorMessage(error) })
+    setMsg({ kind: 'success', text: 'Vínculo criado. O paciente já aparece na lista do profissional; agora o paciente escolhe, em "Meus profissionais", o que ele pode ver.' })
+    setClient(''); void load()
+  }
+  async function activate(l: AdminLink) {
+    const { error } = await supabase.rpc('admin_link_client', { _professional: l.professional_id, _client: l.client_id })
+    if (error) setMsg({ kind: 'error', text: errorMessage(error) }); else void load()
+  }
+  async function end(l: AdminLink) {
+    if (!confirm(`Encerrar o vínculo entre ${l.professional_name ?? l.professional_email} e ${l.client_name ?? l.client_email}? As liberações do paciente serão revogadas.`)) return
+    const { error } = await supabase.rpc('admin_end_link', { _link: l.id })
+    if (error) setMsg({ kind: 'error', text: errorMessage(error) }); else void load()
+  }
+
+  return (
+    <div>
+      <PageHeader title="Vínculos" subtitle="Ligue profissionais aos pacientes. O paciente continua decidindo quais módulos o profissional pode ver." />
+      <form onSubmit={link} className="card mb-6 grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+        <label><span className="label">Profissional</span>
+          <select className="input" value={pro} onChange={(e) => setPro(e.target.value)}>
+            <option value="">Escolha…</option>{pros.map((u) => <option key={u.id} value={u.id}>{label(u)}</option>)}
+          </select></label>
+        <label><span className="label">Paciente</span>
+          <select className="input" value={client} onChange={(e) => setClient(e.target.value)}>
+            <option value="">Escolha…</option>{(users ?? []).filter((u) => u.id !== pro).map((u) => <option key={u.id} value={u.id}>{label(u)}</option>)}
+          </select></label>
+        <button className="btn-primary" disabled={busy}>{busy && <Spinner />} Vincular</button>
+        {pros.length === 0 && users && <p className="text-xs text-stone-500 sm:col-span-3">Nenhum profissional cadastrado. Crie um em Usuários → Criar usuário (tipo Profissional).</p>}
+      </form>
+      {msg && <div className="mb-4"><Alert kind={msg.kind}>{msg.text}</Alert></div>}
+      {links === null ? <Spinner className="size-6" /> : links.length === 0 ? (
+        <EmptyState icon={UserPlus} title="Nenhum vínculo ainda">Escolha um profissional e um paciente acima.</EmptyState>
+      ) : (
+        <ul className="space-y-2">
+          {links.map((l) => (
+            <li key={l.id} className={`card !p-4 ${l.status === 'ended' ? 'opacity-60' : ''}`}>
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="min-w-0 flex-1 text-sm">
+                  <div><b>{l.professional_name ?? l.professional_email}</b> <span className="text-stone-400">→</span> <b>{l.client_name ?? l.client_email}</b></div>
+                  <div className="text-xs text-stone-500">{l.client_email} · desde {formatDate(l.accepted_at ?? l.created_at)}</div>
+                </div>
+                <span className={`badge ${LINK_STATUS[l.status].cls}`}>{LINK_STATUS[l.status].text}</span>
+                {l.status === 'invited' && <button className="btn-outline !px-3 !py-1.5" onClick={() => void activate(l)}>Ativar</button>}
+                {l.status !== 'ended' && <button className="btn-ghost !px-2 !py-1.5 text-xs" onClick={() => void end(l)}>Encerrar</button>}
+              </div>
+              {l.status === 'active' && (
+                <div className="mt-2 text-xs text-stone-500">
+                  Liberado pelo paciente: {l.shared_modules.length ? l.shared_modules.map((k) => modules[k] ?? k).join(', ') : <span className="text-amber-700 dark:text-amber-400">nada ainda — o paciente libera em "Meus profissionais"</span>}
+                </div>
+              )}
+              {l.status === 'active' && (() => {
+                const pm = (users ?? []).find((u) => u.id === l.professional_id)?.pro_modules ?? []
+                return <div className="mt-0.5 text-xs text-stone-500">No plano do profissional: {pm.length ? pm.map((k) => modules[k] ?? k).join(', ') : <span className="text-amber-700 dark:text-amber-400">nenhum módulo — ajuste em Usuários → Editar plano</span>}</div>
+              })()}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}

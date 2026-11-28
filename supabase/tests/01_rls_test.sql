@@ -606,4 +606,34 @@ update public.wellness_goals set diet_preferences = 'sem lactose', diet_suggesti
 select test.ok((select diet_preferences from public.wellness_goals) = 'sem lactose', 'Preferências e sugestão de dieta ficam nas metas do dono');
 commit;
 
+-- Admin vincula profissional e paciente direto.
+insert into auth.users (id, email, raw_user_meta_data) values ('00000000-0000-0000-0000-0000000000b1', 'hugo@teste.com', '{"full_name":"Hugo Paciente"}');
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000b';
+select test.fails($$select public.admin_link_client('00000000-0000-0000-0000-00000000000b', '00000000-0000-0000-0000-0000000000b1')$$, 'Só o admin vincula diretamente');
+commit;
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000c';
+select public.admin_link_client('00000000-0000-0000-0000-00000000000b', '00000000-0000-0000-0000-0000000000b1');
+select test.fails($$select public.admin_link_client('00000000-0000-0000-0000-0000000000b1', '00000000-0000-0000-0000-00000000000b')$$, 'Admin só vincula quem é profissional como profissional');
+select test.ok((select status from public.admin_list_links() where client_id = '00000000-0000-0000-0000-0000000000b1') = 'active', 'Vínculo feito pelo admin já nasce ativo');
+commit;
+select test.ok(private.has_active_subscription('00000000-0000-0000-0000-0000000000b1'), 'Paciente vinculado pelo admin ganha acesso patrocinado');
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000b';
+select test.ok((select count(*) from public.health_entries where owner_id = '00000000-0000-0000-0000-0000000000b1') = 0
+  and exists (select 1 from public.professional_client_links where client_id = '00000000-0000-0000-0000-0000000000b1' and status = 'active'), 'Profissional vê o vínculo, mas nenhum dado sem a liberação do paciente');
+commit;
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000c';
+select public.admin_end_link((select id from public.admin_list_links() where client_id = '00000000-0000-0000-0000-0000000000b1'));
+select test.ok((select status from public.admin_list_links() where client_id = '00000000-0000-0000-0000-0000000000b1') = 'ended', 'Admin encerra o vínculo');
+select public.admin_link_client('00000000-0000-0000-0000-00000000000b', '00000000-0000-0000-0000-0000000000b1');
+select test.ok((select status from public.admin_list_links() where client_id = '00000000-0000-0000-0000-0000000000b1') = 'active', 'Admin refaz um vínculo encerrado');
+commit;
+
 \echo 'TODOS OS TESTES PASSARAM'

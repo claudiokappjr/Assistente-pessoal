@@ -150,7 +150,8 @@ Deno.serve(async (req) => {
 
     let created
     try { created = await createWithLink() } catch (e) { return json({ error: (e as Error).message }, 400) }
-    const { error: linkErr } = await db.from('professional_client_links').insert({ professional_id: caller.id, client_id: created.userId, invited_by: caller.id })
+    // Paciente criado pelo próprio profissional já nasce vinculado; ele só escolhe o que compartilhar.
+    const { error: linkErr } = await db.from('professional_client_links').insert({ professional_id: caller.id, client_id: created.userId, invited_by: caller.id, status: 'active', accepted_at: new Date().toISOString() })
     if (linkErr) return json({ error: `Conta criada, mas falhou o vínculo: ${linkErr.message}` }, 500)
     await db.from('subscriptions').insert({
       user_id: created.userId, plan_id: individual.id, status: 'active', source: 'professional',
