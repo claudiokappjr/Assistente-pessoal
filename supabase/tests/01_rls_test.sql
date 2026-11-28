@@ -539,4 +539,55 @@ set local request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000c';
 select test.ok((select count(*) from public.wellness_goals) = 0 and (select count(*) from public.food_logs) = 0, 'Admin não vê metas nem refeições');
 commit;
 
+-- Sonhos e escalas. Davi (profissional vinculado à Ana) passa a ter Saúde no plano e autorização da Ana.
+update public.subscriptions set pro_modules = '{exercicios,saude}' where user_id = '00000000-0000-0000-0000-00000000000d';
+insert into public.consent_grants (client_id, professional_id, module_key, purpose)
+values ('00000000-0000-0000-0000-00000000000a', '00000000-0000-0000-0000-00000000000d', 'saude', 'Escalas');
+select test.ok((select name from public.modules where key = 'psicanalise') = 'Psicologia e Psicanálise', 'Módulo renomeado para Psicologia e Psicanálise');
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+insert into public.psy_entries (kind, content, themes, interpretation) values ('sonho', 'Eu caía de um prédio', '{queda,trabalho}', 'Medo de perder o controle');
+select test.ok((select themes from public.psy_entries where content like 'Eu caía%') = '{queda,trabalho}', 'Sonho guarda motivos e interpretação');
+insert into public.scale_responses (scale_key, module_key, answers, score, severity) values ('gad7', 'psicanalise', '{2,2,2,2,2,2,2}', 0, 'minimo');
+select test.ok((select score = 14 and severity = 'moderado' and filled_role = 'paciente' from public.scale_responses where scale_key = 'gad7'), 'GAD-7 é pontuado pelo banco (não aceita resultado inventado)');
+select test.fails($$insert into public.scale_responses (scale_key, module_key, answers) values ('gad7', 'psicanalise', '{1,1}')$$, 'Escala incompleta é recusada');
+select test.fails($$insert into public.scale_responses (scale_key, module_key, answers) values ('auditc', 'psicanalise', '{1,1,1}')$$, 'Escala fora do módulo é recusada');
+insert into public.scale_responses (scale_key, module_key, answers) values ('phq9', 'psicanalise', '{0,0,0,0,0,0,0,0,1}');
+select test.ok((select alert from public.scale_responses where scale_key = 'phq9'), 'PHQ-9 sinaliza a pergunta 9 para atenção');
+select test.fails($$update public.scale_responses set score = 0$$, 'Resultado de escala não pode ser alterado');
+commit;
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000d';
+insert into public.scale_assignments (id, owner_id, scale_key, module_key, specialty) values ('70000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-00000000000a', 'findrisc', 'saude', 'endocrinologia');
+select test.fails($$insert into public.scale_assignments (owner_id, scale_key, module_key) values ('00000000-0000-0000-0000-00000000000a', 'gad7', 'psicanalise')$$, 'Profissional não libera escala em módulo sem autorização');
+insert into public.scale_responses (owner_id, scale_key, module_key, answers) values ('00000000-0000-0000-0000-00000000000a', 'eva_dor', 'saude', '{7}');
+select test.ok((select filled_role = 'profissional' and severity = 'intensa' from public.scale_responses where scale_key = 'eva_dor'), 'Profissional aplica a escala junto com o paciente');
+select test.ok((select count(*) from public.scale_responses where scale_key in ('gad7', 'phq9')) = 0, 'Profissional não vê escalas de módulo não autorizado');
+commit;
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+select test.ok((select count(*) from public.scale_assignments where status = 'pendente') = 1, 'Paciente vê o pedido do profissional');
+insert into public.scale_responses (scale_key, module_key, answers, assignment_id) values ('findrisc', 'saude', '{2,1,3,0,0,0,0,3}', '70000000-0000-0000-0000-000000000001');
+select test.ok((select status from public.scale_assignments where id = '70000000-0000-0000-0000-000000000001') = 'respondida', 'Responder o pedido marca como respondido');
+select test.fails($$insert into public.scale_responses (scale_key, module_key, answers, assignment_id) values ('findrisc', 'saude', '{0,0,0,0,0,0,0,0}', '70000000-0000-0000-0000-000000000001')$$, 'Pedido já respondido não aceita outra resposta');
+commit;
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000d';
+select test.ok((select score from public.scale_responses where scale_key = 'findrisc') = 9, 'Profissional vê o resultado do pedido');
+commit;
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000e1';
+select test.ok((select count(*) from public.scale_responses) = 0 and (select count(*) from public.scale_assignments) = 0, 'Estranho não vê escalas nem pedidos');
+commit;
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000c';
+select test.ok((select count(*) from public.scale_responses) = 0 and (select count(*) from public.psy_entries) = 0, 'Admin não vê escalas nem sonhos');
+commit;
+
 \echo 'TODOS OS TESTES PASSARAM'

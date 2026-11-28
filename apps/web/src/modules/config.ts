@@ -147,7 +147,7 @@ export const MODULES: Record<string, ModuleConfig> = {
     note: 'Registro pessoal, sem valor de diagnóstico.',
   },
   psicanalise: {
-    key: 'psicanalise', table: 'psy_entries', title: 'Psicanálise', subtitle: 'Sonhos e insights, só seus — e de quem você autorizar.',
+    key: 'psicanalise', table: 'psy_entries', title: 'Psicologia e Psicanálise', subtitle: 'Sonhos e insights, só seus — e de quem você autorizar.',
     dateKey: 'occurred_on',
     fields: [
       { key: 'kind', label: 'Tipo', type: 'select', required: true, half: true, options: [{ value: 'sonho', label: 'Sonho' }, { value: 'insight', label: 'Insight' }] },

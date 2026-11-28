@@ -1,5 +1,5 @@
 import {
-  Activity, CalendarClock, Check, ChevronDown, ChevronLeft, FileText, FlaskConical, LineChart, NotebookPen, Paperclip, Pencil, Pill, Plus,
+  Activity, CalendarClock, Check, ClipboardList, ChevronDown, ChevronLeft, FileText, FlaskConical, LineChart, NotebookPen, Paperclip, Pencil, Pill, Plus,
   Sparkles, Stethoscope, Trash2, Upload, X,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
@@ -10,6 +10,7 @@ import { errorMessage, supabase } from '../../lib/supabase'
 import { MODULES, todayISO } from '../config'
 import { ModulePage } from '../ModulePage'
 import { PendingDrafts } from '../../components/PendingDrafts'
+import { ScalesPanel } from '../scales/ScalesPanel'
 
 // ------------------------------------------------------------------ tipos
 type Flag = 'baixo' | 'normal' | 'alto' | 'alterado'
@@ -1090,10 +1091,11 @@ function ConsultForm({ item, owner, known, onClose, onSaved }: { item: Consultat
 }
 
 // ================================================================== PÁGINA
-type Tab = 'exames' | 'medicamentos' | 'consultas' | 'diario'
+type Tab = 'exames' | 'medicamentos' | 'consultas' | 'especialidades' | 'diario'
 const TABS: { key: Tab; label: string; icon: typeof Activity }[] = [
   { key: 'exames', label: 'Exames', icon: FlaskConical }, { key: 'medicamentos', label: 'Remédios', icon: Pill },
-  { key: 'consultas', label: 'Consultas', icon: Stethoscope }, { key: 'diario', label: 'Diário', icon: NotebookPen },
+  { key: 'consultas', label: 'Consultas', icon: Stethoscope }, { key: 'especialidades', label: 'Especialidades', icon: ClipboardList },
+  { key: 'diario', label: 'Diário', icon: NotebookPen },
 ]
 
 export function HealthPage({ ownerId, embedded = false }: { ownerId?: string; embedded?: boolean }) {
@@ -1106,11 +1108,11 @@ export function HealthPage({ ownerId, embedded = false }: { ownerId?: string; em
   return (
     <div>
       {!embedded && (
-        <PageHeader title="Saúde" subtitle="Exames, remédios, consultas e diário de sintomas."
+        <PageHeader title="Saúde" subtitle="Exames, remédios, consultas, escalas por especialidade e diário."
           actions={!readOnly && <Link to="/app/assistente" className="btn-outline"><Sparkles className="size-4" /> Pelo assistente</Link>} />
       )}
       {!readOnly && <PendingDrafts moduleKey="saude" moduleName="Saúde" onDecided={() => setRk((k) => k + 1)} />}
-      <div className="mb-5 grid grid-cols-4 gap-1 rounded-xl bg-stone-200/60 p-1 dark:bg-stone-800">
+      <div className="mb-5 grid grid-cols-5 gap-1 rounded-xl bg-stone-200/60 p-1 dark:bg-stone-800">
         {TABS.map((t) => (
           <button key={t.key} onClick={() => setTab(t.key)}
             className={`flex flex-col items-center gap-0.5 rounded-lg px-1 py-2 text-xs font-medium transition sm:flex-row sm:justify-center sm:gap-1.5 sm:text-sm ${tab === t.key ? 'bg-white text-stone-900 shadow-sm dark:bg-stone-950 dark:text-stone-50' : 'text-stone-600 dark:text-stone-400'}`}>
@@ -1121,6 +1123,7 @@ export function HealthPage({ ownerId, embedded = false }: { ownerId?: string; em
       {tab === 'exames' && <ExamsTab key={rk} owner={owner} readOnly={readOnly} />}
       {tab === 'medicamentos' && <MedsTab key={rk} owner={owner} readOnly={readOnly} />}
       {tab === 'consultas' && <ConsultsTab key={rk} owner={owner} readOnly={readOnly} />}
+      {tab === 'especialidades' && <ScalesPanel key={rk} owner={owner} module="saude" mode="especialidades" />}
       {tab === 'diario' && <ModulePage key={rk} config={MODULES.saude} ownerId={ownerId} embedded />}
       <p className="mt-8 text-xs text-stone-500">
         Registro pessoal, sem valor de diagnóstico. A leitura por IA pode errar: confira sempre com o documento original e converse com seu médico antes de mudar qualquer tratamento.

@@ -25,7 +25,7 @@ const NAV: Record<Area, Item[]> = {
     { to: '/app/agenda', label: 'Agenda', icon: CalendarDays, module: 'agenda' },
     { to: '/app/financas', label: 'Finanças', icon: Wallet, module: 'financas' },
     { to: '/app/saude', label: 'Saúde', icon: HeartPulse, module: 'saude' },
-    { to: '/app/psicanalise', label: 'Psicanálise', icon: Moon, module: 'psicanalise' },
+    { to: '/app/psicanalise', label: 'Psicologia e Psicanálise', icon: Moon, module: 'psicanalise' },
     { to: '/app/nutricao', label: 'Nutrição', icon: Apple, module: 'nutricao' },
     { to: '/app/exercicios', label: 'Exercícios', icon: Dumbbell, module: 'exercicios' },
     { to: '/app/ciclo', label: 'Ciclo', icon: Activity, module: 'ciclo' },

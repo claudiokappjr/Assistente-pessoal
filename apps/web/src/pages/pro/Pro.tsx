@@ -13,6 +13,7 @@ import { ModulePage } from '../../modules/ModulePage'
 import { NutritionPage } from '../../modules/nutrition/NutritionPage'
 import { HealthPage } from '../../modules/health/HealthPage'
 import { ExercisePage } from '../../modules/wellness/ExercisePage'
+import { PsychPage } from '../../modules/psych/PsychPage'
 
 function useProfessional() {
   const { session } = useAuth()
@@ -362,7 +363,8 @@ export function ProClientDetailPage() {
           {tab === 'nutricao' && allowed.some((m) => m.key === tab) && <NutritionPage key={tab} ownerId={clientId} embedded />}
           {tab === 'saude' && allowed.some((m) => m.key === tab) && <HealthPage key={tab} ownerId={clientId} embedded />}
           {tab === 'exercicios' && allowed.some((m) => m.key === tab) && <ExercisePage key={tab} ownerId={clientId} embedded />}
-          {tab && tab !== 'nutricao' && tab !== 'saude' && tab !== 'exercicios' && MODULES[tab] && allowed.some((m) => m.key === tab) && <ModulePage key={tab} config={MODULES[tab]} ownerId={clientId} embedded />}
+          {tab === 'psicanalise' && allowed.some((m) => m.key === tab) && <PsychPage key={tab} ownerId={clientId} embedded />}
+          {tab && tab !== 'nutricao' && tab !== 'saude' && tab !== 'exercicios' && tab !== 'psicanalise' && MODULES[tab] && allowed.some((m) => m.key === tab) && <ModulePage key={tab} config={MODULES[tab]} ownerId={clientId} embedded />}
           <p className="mt-6 text-xs text-stone-500">Seu acesso termina na hora em que o cliente revogar a autorização.</p>
         </>
       )}
