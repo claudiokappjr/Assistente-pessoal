@@ -74,7 +74,7 @@ export function AppLayout({ area }: { area: Area }) {
   const enabled = new Set(modules.map((m) => m.key))
   const items = NAV[area].filter((i) => !i.module || enabled.has(i.module))
   const pending = usePendingCounts(area === 'app')
-  const countFor = (i: Item) => (i.to === '/app/caixa-de-entrada' ? pending.total : i.module ? pending[i.module] : 0) ?? 0
+  const countFor = (i: Item) => (i.to === '/app/caixa-de-entrada' ? pending.total : i.to === '/app/profissionais' ? pending.profissionais : i.module ? pending[i.module] : 0) ?? 0
   const mobileItems = MOBILE[area].map((to) => NAV[area].find((i) => i.to === to)!).filter(Boolean)
 
   const areas: { key: Area; to: string; icon: LucideIcon; show: boolean }[] = [
@@ -162,6 +162,12 @@ export function AppLayout({ area }: { area: Area }) {
         </header>
 
         <main key={location.pathname} className="mx-auto w-full max-w-5xl flex-1 px-4 pb-28 pt-6 md:px-8 lg:pb-12 lg:pt-10">
+          {area === 'app' && (pending.profissionais ?? 0) > 0 && location.pathname !== '/app/profissionais' && (
+            <NavLink to="/app/profissionais" className="mb-5 flex items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+              <span className="flex-1"><b>Seu profissional pediu acesso</b> a {pending.profissionais === 1 ? 'um módulo' : `${pending.profissionais} módulos`}. Toque para decidir o que liberar.</span>
+              <span aria-hidden>→</span>
+            </NavLink>
+          )}
           {area === 'app' && accountLoaded && !hasActiveSubscription && !OPEN_WITHOUT_PLAN.includes(location.pathname)
             ? <PendingSubscription subscriptions={subscriptions} />
             : <Outlet />}

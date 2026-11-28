@@ -35,7 +35,7 @@ Requer Postgres 15+ local.
 PGHOST=localhost PGUSER=postgres ./supabase/tests/run_local.sh
 ```
 
-Os 155 testes cobrem: usuário só vê os próprios dados; profissional precisa de aprovação do admin; profissional só acessa módulo com consentimento ativo do cliente; revogação e encerramento de vínculo cortam o acesso na hora; administrador não se auto-remove; auditoria é imutável; exames, remédios e consultas seguem as mesmas regras (e o arquivo enviado fica numa pasta privada do dono).
+Os 162 testes cobrem: usuário só vê os próprios dados; profissional precisa de aprovação do admin; profissional só acessa módulo com consentimento ativo do cliente; revogação e encerramento de vínculo cortam o acesso na hora; administrador não se auto-remove; auditoria é imutável; exames, remédios e consultas seguem as mesmas regras (e o arquivo enviado fica numa pasta privada do dono).
 
 ## Status por fase
 

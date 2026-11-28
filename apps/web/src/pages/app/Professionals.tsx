@@ -5,6 +5,7 @@ import { Alert, EmptyState, PageHeader, Spinner } from '../../components/ui'
 import { formatDate } from '../../lib/format'
 import { errorMessage, supabase } from '../../lib/supabase'
 import type { Consent, Link, Module, ProfessionalProfile } from '../../lib/types'
+import { ClientAccessRequests, type AccessRequest } from '../../components/AccessRequests'
 
 type LinkRow = Link & { pro?: ProfessionalProfile }
 
@@ -15,14 +16,17 @@ export function MyProfessionalsPage() {
   const [links, setLinks] = useState<LinkRow[] | null>(null)
   const [consents, setConsents] = useState<Consent[]>([])
   const [modules, setModules] = useState<Module[]>([])
+  const [requests, setRequests] = useState<AccessRequest[]>([])
   const [error, setError] = useState('')
 
   const load = useCallback(async () => {
-    const [l, c, m] = await Promise.all([
+    const [l, c, m, r] = await Promise.all([
       supabase.from('professional_client_links').select('*').eq('client_id', uid).neq('status', 'ended').order('created_at', { ascending: false }),
       supabase.from('consent_grants').select('*').eq('client_id', uid).is('revoked_at', null),
       supabase.from('modules').select('*').eq('is_active', true).order('sort_order'),
+      supabase.from('consent_requests').select('*').eq('client_id', uid).eq('status', 'pendente'),
     ])
+    setRequests(((r.data ?? []) as AccessRequest[]))
     const rows = (l.data ?? []) as Link[]
     const ids = rows.map((r) => r.professional_id)
     const pros = ids.length ? ((await supabase.from('professional_profiles').select('*').in('user_id', ids)).data ?? []) as ProfessionalProfile[] : []
@@ -77,6 +81,9 @@ export function MyProfessionalsPage() {
               )}
             </div>
 
+            {l.status === 'active' && (
+              <ClientAccessRequests requests={requests.filter((r) => r.professional_id === l.professional_id)} modules={modules} onChanged={() => void load()} />
+            )}
             {l.status === 'active' && (
               <div className="mt-5">
                 <div className="mb-2 text-sm font-medium">O que este profissional pode ver</div>

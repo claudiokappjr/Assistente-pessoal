@@ -636,4 +636,27 @@ select public.admin_link_client('00000000-0000-0000-0000-00000000000b', '0000000
 select test.ok((select status from public.admin_list_links() where client_id = '00000000-0000-0000-0000-0000000000b1') = 'active', 'Admin refaz um vínculo encerrado');
 commit;
 
+-- Pedido de acesso do profissional ao cliente.
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000d';
+insert into public.consent_requests (id, client_id, module_key) values ('80000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-00000000000a', 'exercicios');
+select test.fails($$insert into public.consent_requests (client_id, module_key) values ('00000000-0000-0000-0000-00000000000a', 'financas')$$, 'Profissional não pede módulo fora do plano');
+select test.fails($$update public.consent_requests set status = 'aprovado' where id = '80000000-0000-0000-0000-000000000001'$$, 'Profissional não aprova o próprio pedido');
+commit;
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000e1';
+select test.fails($$insert into public.consent_requests (client_id, module_key) values ('00000000-0000-0000-0000-00000000000a', 'saude')$$, 'Sem vínculo não dá para pedir acesso');
+select test.ok((select count(*) from public.consent_requests) = 0, 'Estranho não vê pedidos de acesso');
+commit;
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+select test.ok((select count(*) from public.consent_requests where status = 'pendente') = 1, 'Cliente vê o pedido de acesso');
+update public.consent_requests set status = 'aprovado' where id = '80000000-0000-0000-0000-000000000001';
+select test.ok(exists (select 1 from public.consent_grants where professional_id = '00000000-0000-0000-0000-00000000000d' and module_key = 'exercicios' and revoked_at is null), 'Aprovar o pedido libera o módulo');
+select test.fails($$update public.consent_requests set status = 'recusado' where id = '80000000-0000-0000-0000-000000000001'$$, 'Pedido respondido não muda mais');
+commit;
+
 \echo 'TODOS OS TESTES PASSARAM'

@@ -12,6 +12,7 @@ import { STATUS_LABEL } from '../../lib/types'
 import { ModulePage } from '../../modules/ModulePage'
 import { NutritionPage } from '../../modules/nutrition/NutritionPage'
 import { HealthPage } from '../../modules/health/HealthPage'
+import { ProAccessRequest } from '../../components/AccessRequests'
 import { ExercisePage } from '../../modules/wellness/ExercisePage'
 import { PsychPage } from '../../modules/psych/PsychPage'
 
@@ -343,13 +344,16 @@ export function ProClientDetailPage() {
       <PageHeader title={name ?? 'Cliente'} subtitle={link?.status === 'active' ? `Cliente desde ${formatDate(link.accepted_at)} · somente leitura` : 'Vínculo não está ativo'}
         actions={link && link.status !== 'ended' && <div className="flex flex-wrap justify-end gap-2"><AccessLinkButton userId={clientId!} name={name ?? 'Cliente'} className="btn-outline" /></div>} />
       {link?.status === 'invited' && <div className="mb-4"><Alert kind="info">O cliente ainda não aceitou o convite. Se ele não conseguiu entrar, gere um novo link de acesso e envie por WhatsApp.</Alert></div>}
+      {link?.status === 'active' && (
+        <ProAccessRequest clientId={clientId!} proId={session!.user.id} contracted={[...contracted]} consented={consents.map((c) => c.module_key)} modules={modules} onChanged={() => undefined} />
+      )}
       {link?.status !== 'active' ? (
         <Alert kind="info">O cliente precisa aceitar o convite para você ver qualquer informação.</Alert>
       ) : allowed.length === 0 ? (
         <EmptyState icon={Lock} title="Nenhum módulo disponível">
           {notContracted.length
             ? `O cliente autorizou ${notContracted.map((m) => m.name).join(', ')}, mas esses módulos não estão no seu plano.`
-            : 'O cliente ainda não liberou nenhum módulo para você. A autorização é feita por ele, em "Meus profissionais".'}
+            : 'O cliente ainda não liberou nenhum módulo. Escolha acima o que você quer acompanhar e toque em "Pedir acesso".'}
         </EmptyState>
       ) : (
         <>

@@ -13,9 +13,12 @@ export function usePendingCounts(enabled = true) {
     if (!enabled) return
     let alive = true
     const load = async () => {
-      const { data } = await supabase.from('assistant_drafts').select('module_key').eq('status', 'pending').limit(1000)
+      const [{ data }, { count: req }] = await Promise.all([
+        supabase.from('assistant_drafts').select('module_key').eq('status', 'pending').limit(1000),
+        supabase.from('consent_requests').select('id', { count: 'exact', head: true }).eq('status', 'pendente').neq('professional_id', (await supabase.auth.getUser()).data.user?.id ?? ''),
+      ])
       if (!alive) return
-      const c: Record<string, number> = { total: 0 }
+      const c: Record<string, number> = { total: 0, profissionais: req ?? 0 }
       for (const d of (data ?? []) as { module_key: string | null }[]) {
         c.total++
         if (d.module_key) c[d.module_key] = (c[d.module_key] ?? 0) + 1
