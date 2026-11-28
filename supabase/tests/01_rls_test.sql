@@ -433,4 +433,44 @@ select test.ok(public.get_shared_recipe('token-errado-0000000000000') is null, '
 select test.ok((public.get_shared_recipe('token-publico-receita-12345') ? 'owner_id') = false, 'Link público não expõe o autor');
 commit;
 
+-- ============================================================ Saúde: exames, medicamentos, consultas
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+insert into public.lab_exams (id, collected_on, lab_name, title) values ('40000000-0000-0000-0000-000000000001', '2026-10-01', 'Lab X', 'Bioquímica');
+insert into public.lab_results (exam_id, marker, value, unit, ref_low, ref_high, flag) values
+  ('40000000-0000-0000-0000-000000000001', 'Glicose', 105, 'mg/dL', 70, 99, 'alto'),
+  ('40000000-0000-0000-0000-000000000001', 'Colesterol  total', 180, 'mg/dL', null, 190, 'normal');
+insert into public.medications (name, dose, frequency) values ('Losartana', '50 mg', '1x ao dia');
+insert into public.consultations (specialty, professional_name, summary) values ('Cardiologia', 'Dr. Bruno', 'Ajuste de pressão');
+select test.ok((select marker_key from public.lab_results where marker like 'Colesterol%') = 'colesterol total', 'Marcador é normalizado para o gráfico');
+select test.fails($$insert into public.lab_results (exam_id, marker) values ('40000000-0000-0000-0000-000000000001', 'Vazio')$$, 'Resultado sem valor é recusado');
+commit;
+
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000d';
+select test.ok((select count(*) from public.lab_exams) + (select count(*) from public.lab_results) + (select count(*) from public.medications where owner_id = '00000000-0000-0000-0000-00000000000a') + (select count(*) from public.consultations) = 0, 'Estranho não vê exames, medicamentos nem consultas');
+select test.fails($$insert into public.lab_results (exam_id, marker, value) values ('40000000-0000-0000-0000-000000000001', 'Hack', 1)$$, 'Não adiciona resultado em exame alheio');
+commit;
+
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000c';
+select test.ok((select count(*) from public.lab_results) = 0 and (select count(*) from public.medications) = 0, 'Admin não vê dados de saúde');
+commit;
+
+-- Assistente: medicamento confirmado vai para Medicamentos; consulta para Consultas.
+insert into public.assistant_messages (id, owner_id, content_text, status) values ('10000000-0000-0000-0000-000000000009', '00000000-0000-0000-0000-00000000000a', 'x', 'processed');
+insert into public.assistant_drafts (id, owner_id, message_id, module_key, kind, title, data) values
+  ('20000000-0000-0000-0000-000000000009', '00000000-0000-0000-0000-00000000000a', '10000000-0000-0000-0000-000000000009', 'saude', 'medicamento', 'Dipirona', '{"medicamento":"Dipirona","dose":"500 mg"}'),
+  ('20000000-0000-0000-0000-000000000010', '00000000-0000-0000-0000-00000000000a', '10000000-0000-0000-0000-000000000009', 'saude', 'consulta', 'Consulta', '{"especialidade":"Dermatologia","descricao":"Mancha na pele"}');
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+update public.assistant_drafts set status = 'confirmed' where message_id = '10000000-0000-0000-0000-000000000009';
+select test.ok(exists (select 1 from public.medications where name = 'Dipirona' and dose = '500 mg')
+  and exists (select 1 from public.consultations where specialty = 'Dermatologia'), 'Assistente leva medicamento e consulta para as abas certas');
+commit;
+
 \echo 'TODOS OS TESTES PASSARAM'

@@ -127,10 +127,10 @@ export const MODULES: Record<string, ModuleConfig> = {
     note: 'Foto do prato e estimativa de calorias chegam na próxima versão do módulo.',
   },
   saude: {
-    key: 'saude', table: 'health_entries', title: 'Saúde', subtitle: 'Sintomas, medicamentos, consultas e exames.',
+    key: 'saude', table: 'health_entries', title: 'Saúde', subtitle: 'Diário de sintomas e anotações de saúde.',
     dateKey: 'occurred_on',
     fields: [
-      { key: 'kind', label: 'Tipo', type: 'select', required: true, half: true, options: [{ value: 'sintoma', label: 'Sintoma' }, { value: 'medicamento', label: 'Medicamento' }, { value: 'consulta', label: 'Consulta' }, { value: 'exame', label: 'Exame' }] },
+      { key: 'kind', label: 'Tipo', type: 'select', required: true, half: true, options: [{ value: 'sintoma', label: 'Sintoma' }, { value: 'exame', label: 'Anotação' }] },
       { key: 'occurred_on', label: 'Data', type: 'date', required: true, half: true },
       { key: 'description', label: 'Descrição', type: 'text', required: true },
       { key: 'intensity', label: 'Intensidade (0 a 10)', type: 'number', half: true, showIf: (r) => r.kind === 'sintoma' },
@@ -142,8 +142,8 @@ export const MODULES: Record<string, ModuleConfig> = {
     defaults: () => ({ kind: 'sintoma', occurred_on: todayISO() }),
     primary: (r) => String(r.description ?? ''),
     secondary: (r) => join(hhmm(r.occurred_time), r.intensity != null && `intensidade ${r.intensity}/10`, r.medication as string, r.dose as string),
-    badge: (r) => ({ text: ({ sintoma: 'Sintoma', medicamento: 'Medicamento', consulta: 'Consulta', exame: 'Exame' } as Record<string, string>)[String(r.kind)] ?? '', tone: 'stone' }),
-    note: 'Registro pessoal, sem valor de diagnóstico. Upload de exames em PDF e prontuário profissional chegam na Fase 4.',
+    badge: (r) => ({ text: ({ sintoma: 'Sintoma', medicamento: 'Medicamento', consulta: 'Consulta', exame: 'Anotação' } as Record<string, string>)[String(r.kind)] ?? '', tone: 'stone' }),
+    note: 'Registro pessoal, sem valor de diagnóstico.',
   },
   psicanalise: {
     key: 'psicanalise', table: 'psy_entries', title: 'Psicanálise', subtitle: 'Sonhos e insights, só seus — e de quem você autorizar.',

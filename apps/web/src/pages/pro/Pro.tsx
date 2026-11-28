@@ -11,6 +11,7 @@ import { AccessLink, AccessLinkButton, ProPlanPicker } from '../../components/pl
 import { STATUS_LABEL } from '../../lib/types'
 import { ModulePage } from '../../modules/ModulePage'
 import { NutritionPage } from '../../modules/nutrition/NutritionPage'
+import { HealthPage } from '../../modules/health/HealthPage'
 
 function useProfessional() {
   const { session } = useAuth()
@@ -358,7 +359,8 @@ export function ProClientDetailPage() {
             ))}
           </div>
           {tab === 'nutricao' && allowed.some((m) => m.key === tab) && <NutritionPage key={tab} ownerId={clientId} embedded />}
-          {tab && tab !== 'nutricao' && MODULES[tab] && allowed.some((m) => m.key === tab) && <ModulePage key={tab} config={MODULES[tab]} ownerId={clientId} embedded />}
+          {tab === 'saude' && allowed.some((m) => m.key === tab) && <HealthPage key={tab} ownerId={clientId} embedded />}
+          {tab && tab !== 'nutricao' && tab !== 'saude' && MODULES[tab] && allowed.some((m) => m.key === tab) && <ModulePage key={tab} config={MODULES[tab]} ownerId={clientId} embedded />}
           <p className="mt-6 text-xs text-stone-500">Seu acesso termina na hora em que o cliente revogar a autorização.</p>
         </>
       )}
