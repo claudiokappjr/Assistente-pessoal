@@ -10,6 +10,7 @@ import { MODULES } from '../../modules/config'
 import { AccessLink, AccessLinkButton, ProPlanPicker } from '../../components/plans'
 import { STATUS_LABEL } from '../../lib/types'
 import { ModulePage } from '../../modules/ModulePage'
+import { NutritionPage } from '../../modules/nutrition/NutritionPage'
 
 function useProfessional() {
   const { session } = useAuth()
@@ -356,7 +357,8 @@ export function ProClientDetailPage() {
               </button>
             ))}
           </div>
-          {tab && MODULES[tab] && allowed.some((m) => m.key === tab) && <ModulePage key={tab} config={MODULES[tab]} ownerId={clientId} embedded />}
+          {tab === 'nutricao' && allowed.some((m) => m.key === tab) && <NutritionPage key={tab} ownerId={clientId} embedded />}
+          {tab && tab !== 'nutricao' && MODULES[tab] && allowed.some((m) => m.key === tab) && <ModulePage key={tab} config={MODULES[tab]} ownerId={clientId} embedded />}
           <p className="mt-6 text-xs text-stone-500">Seu acesso termina na hora em que o cliente revogar a autorização.</p>
         </>
       )}

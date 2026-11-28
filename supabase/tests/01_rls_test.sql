@@ -357,4 +357,42 @@ select test.ok((select pro_modules from public.subscriptions s join public.plans
 commit;
 select test.ok((select count(*) from public.user_modules where user_id = '00000000-0000-0000-0000-0000000000a1' and enabled) = 0, 'Pedido pendente não libera módulos');
 
+-- ============================================================ Nutrição: receitas e cardápio
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000e1';
+insert into public.recipes (id, title, meal_types, servings) values ('30000000-0000-0000-0000-000000000001', 'Omelete', '{cafe,jantar}', 2);
+insert into public.recipe_ingredients (recipe_id, name, quantity, unit) values
+  ('30000000-0000-0000-0000-000000000001', 'Ovo', 4, 'unid'), ('30000000-0000-0000-0000-000000000001', 'Sal', null, 'a_gosto');
+insert into public.meal_plan_items (plan_date, meal_type, recipe_id, servings) values ('2026-11-30', 'cafe', '30000000-0000-0000-0000-000000000001', 1);
+insert into public.shopping_checks (week_start, item_key) values ('2026-11-30', 'ovo|unid');
+select test.ok((select count(*) from public.recipe_ingredients) = 2 and (select count(*) from public.meal_plan_items) = 1, 'Eva cria receita, ingredientes e cardápio');
+select test.fails($$insert into public.recipes (title, meal_types) values ('X', '{brunch}')$$, 'Tipo de refeição inválido é recusado');
+commit;
+
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000d';
+select test.ok((select count(*) from public.recipes) = 0 and (select count(*) from public.meal_plan_items) = 0, 'Estranho não vê receitas nem cardápio alheios');
+select test.fails($$insert into public.recipe_ingredients (recipe_id, name) values ('30000000-0000-0000-0000-000000000001', 'veneno')$$, 'Não adiciona ingrediente em receita alheia');
+select test.fails($$insert into public.meal_plan_items (plan_date, meal_type, recipe_id) values ('2026-11-30', 'cafe', '30000000-0000-0000-0000-000000000001')$$, 'Não usa receita alheia no próprio cardápio');
+commit;
+
+-- Fábio (nutricionista com Nutrição no plano, autorizado pela Eva) só lê.
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000f1';
+select test.ok((select count(*) from public.recipes) = 1 and (select count(*) from public.meal_plan_items) = 1, 'Nutricionista autorizado vê receitas e cardápio do cliente');
+update public.recipes set title = 'alterado';
+delete from public.meal_plan_items;
+commit;
+select test.ok((select title from public.recipes where id = '30000000-0000-0000-0000-000000000001') = 'Omelete'
+  and (select count(*) from public.meal_plan_items) = 1, 'Nutricionista não altera receitas nem cardápio do cliente');
+
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000c';
+select test.ok((select count(*) from public.recipes) = 0, 'Admin não vê receitas');
+commit;
+
 \echo 'TODOS OS TESTES PASSARAM'

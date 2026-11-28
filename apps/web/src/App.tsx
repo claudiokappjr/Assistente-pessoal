@@ -9,6 +9,7 @@ import { DashboardPage } from './pages/app/Dashboard'
 import { AssistantPage, InboxPage } from './pages/app/Inbox'
 import { MODULES } from './modules/config'
 import { ModulePage } from './modules/ModulePage'
+import { NutritionPage } from './modules/nutrition/NutritionPage'
 import { MyProfessionalsPage } from './pages/app/Professionals'
 import { SettingsPage } from './pages/app/Settings'
 import { BecomeProfessionalPage, ProClientDetailPage, ProClientsPage, ProDashboardPage, ProProfilePage } from './pages/pro/Pro'
@@ -41,7 +42,8 @@ export default function App() {
             <Route index element={<DashboardPage />} />
             <Route path="caixa-de-entrada" element={<InboxPage />} />
             <Route path="assistente" element={<AssistantPage />} />
-            {Object.values(MODULES).map((m) => <Route key={m.key} path={m.key} element={<ModulePage key={m.key} config={m} />} />)}
+            {Object.values(MODULES).filter((m) => m.key !== 'nutricao').map((m) => <Route key={m.key} path={m.key} element={<ModulePage key={m.key} config={m} />} />)}
+            <Route path="nutricao" element={<NutritionPage />} />
             <Route path="profissionais" element={<MyProfessionalsPage />} />
             <Route path="configuracoes" element={<SettingsPage />} />
             <Route path="sou-profissional" element={<BecomeProfessionalPage />} />

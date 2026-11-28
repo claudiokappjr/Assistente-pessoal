@@ -245,6 +245,9 @@ export function ModulePage({ config, ownerId, embedded = false }: { config: Modu
         />
       )}
 
+      {embedded && !readOnly && (
+        <div className="mb-3 flex justify-end"><button className="btn-primary" onClick={() => setEditing('new')}><Plus className="size-4" /> Adicionar</button></div>
+      )}
       <div className="mb-4 flex items-center justify-between">
         <button className="btn-ghost !p-2" onClick={() => shift(-1)} aria-label="Mês anterior"><ChevronLeft className="size-5" /></button>
         <div className="font-medium capitalize">{MONTHS[ym.m]} de {ym.y}</div>

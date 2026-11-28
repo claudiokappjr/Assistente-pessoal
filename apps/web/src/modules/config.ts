@@ -124,7 +124,7 @@ export const MODULES: Record<string, ModuleConfig> = {
     defaults: () => ({ kind: 'refeicao', logged_on: todayISO() }),
     primary: (r) => (r.kind === 'agua' ? `Água${r.water_ml ? ` — ${r.water_ml} ml` : ''}` : String(r.meal ?? 'Refeição')),
     secondary: (r) => join(hhmm(r.logged_time), list(r.items)),
-    note: 'Planos alimentares do nutricionista, foto do prato e estimativa de calorias chegam na Fase 5.',
+    note: 'Foto do prato e estimativa de calorias chegam na próxima versão do módulo.',
   },
   saude: {
     key: 'saude', table: 'health_entries', title: 'Saúde', subtitle: 'Sintomas, medicamentos, consultas e exames.',
