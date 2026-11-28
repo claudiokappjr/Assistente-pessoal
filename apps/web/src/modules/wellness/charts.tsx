@@ -10,13 +10,28 @@ export interface Goals {
   goal_type?: string | null; target_weight_kg?: number | null; target_date?: string | null; plan_notes?: string | null
   diet_preferences?: string | null; diet_suggestion?: unknown; diet_generated_at?: string | null
 }
+// Metas compartilhadas: todas as telas (Registros, Dieta, Exercícios…) leem a MESMA
+// cópia. Quando uma tela salva e recarrega, todas as outras se atualizam juntas.
+const goalsCache = new Map<string, Goals | null>()
+const goalsListeners = new Map<string, Set<(g: Goals | null) => void>>()
+async function fetchGoals(owner: string) {
+  const { data } = await supabase.from('wellness_goals').select('*').eq('owner_id', owner).maybeSingle()
+  const g = (data as Goals | null) ?? null
+  goalsCache.set(owner, g)
+  goalsListeners.get(owner)?.forEach((fn) => fn(g))
+  return g
+}
 export function useGoals(owner: string) {
-  const [goals, setGoals] = useState<Goals | null | undefined>(undefined)
-  const load = useCallback(async () => {
-    const { data } = await supabase.from('wellness_goals').select('*').eq('owner_id', owner).maybeSingle()
-    setGoals((data as Goals | null) ?? null)
+  const [goals, setGoals] = useState<Goals | null | undefined>(() => goalsCache.get(owner))
+  useEffect(() => {
+    const set = goalsListeners.get(owner) ?? new Set()
+    goalsListeners.set(owner, set)
+    set.add(setGoals)
+    setGoals(goalsCache.get(owner))
+    void fetchGoals(owner)
+    return () => { set.delete(setGoals) }
   }, [owner])
-  useEffect(() => { void load() }, [load])
+  const load = useCallback(() => fetchGoals(owner), [owner])
   return { goals, reload: load }
 }
 
