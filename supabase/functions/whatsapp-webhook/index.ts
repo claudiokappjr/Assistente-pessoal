@@ -76,8 +76,15 @@ interface WaMessage {
   button?: { payload: string; text: string }
 }
 
+/** Responde sempre no formato com o 9 (celular BR): a Meta entrega sem ele, mas a lista de teste e o cadastro usam com. */
+function replyTo(waId: string) {
+  const d = waId.replace(/\D/g, '')
+  const br = d.match(/^55(\d{2})([6-9]\d{7})$/)
+  return br ? `55${br[1]}9${br[2]}` : d
+}
+
 async function handle(m: WaMessage) {
-  const to = m.from
+  const to = replyTo(m.from)
   const identity = await findIdentity(m.from)
   const text = m.text?.body?.trim() ?? ''
 
