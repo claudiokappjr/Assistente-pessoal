@@ -1,4 +1,4 @@
-import { Download, MessageCircle, ScrollText, Trash2, User } from 'lucide-react'
+import { Download, KeyRound, MessageCircle, ScrollText, Trash2, User } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { useAuth } from '../../auth/AuthProvider'
 import { Alert, EmptyState, PageHeader, Spinner } from '../../components/ui'
@@ -17,6 +17,7 @@ export function SettingsPage() {
     <div className="space-y-8">
       <PageHeader title="Configurações" subtitle="Seu perfil, canais e privacidade." />
       <ProfileSection />
+      <PasswordSection />
       <WhatsappSection />
       <PrivacySection />
     </div>
@@ -66,6 +67,36 @@ function ProfileSection() {
         </div>
         <div className="flex items-center gap-3 md:col-span-2">
           <button className="btn-primary" disabled={busy}>{busy && <Spinner />} Salvar</button>
+          {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
+        </div>
+      </form>
+    </Section>
+  )
+}
+
+function PasswordSection() {
+  const [pw, setPw] = useState('')
+  const [pw2, setPw2] = useState('')
+  const [msg, setMsg] = useState<{ kind: 'error' | 'success'; text: string } | null>(null)
+  const [busy, setBusy] = useState(false)
+  async function save(e: FormEvent) {
+    e.preventDefault()
+    if (pw.length < 8) return setMsg({ kind: 'error', text: 'A senha precisa ter pelo menos 8 caracteres.' })
+    if (pw !== pw2) return setMsg({ kind: 'error', text: 'As duas senhas não são iguais.' })
+    setBusy(true); setMsg(null)
+    const { error } = await supabase.auth.updateUser({ password: pw })
+    setBusy(false)
+    if (error) return setMsg({ kind: 'error', text: errorMessage(error) })
+    setPw(''); setPw2('')
+    setMsg({ kind: 'success', text: 'Senha alterada.' })
+  }
+  return (
+    <Section icon={KeyRound} title="Alterar senha">
+      <form onSubmit={save} className="grid gap-3 md:grid-cols-2">
+        <input type="password" className="input" placeholder="Nova senha" autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} />
+        <input type="password" className="input" placeholder="Repita a nova senha" autoComplete="new-password" value={pw2} onChange={(e) => setPw2(e.target.value)} />
+        <div className="flex items-center gap-3 md:col-span-2">
+          <button className="btn-primary" disabled={busy}>{busy && <Spinner />} Alterar senha</button>
           {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
         </div>
       </form>

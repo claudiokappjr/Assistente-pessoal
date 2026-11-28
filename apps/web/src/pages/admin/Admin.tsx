@@ -4,7 +4,7 @@ import { useAuth } from '../../auth/AuthProvider'
 import { Alert, EmptyState, PageHeader, Spinner, Stat } from '../../components/ui'
 import { formatDate, formatDateTime, roleLabel } from '../../lib/format'
 import { errorMessage, supabase } from '../../lib/supabase'
-import { AccessLink, ProPlanPicker } from '../../components/plans'
+import { AccessLink, AccessLinkButton, ProPlanPicker } from '../../components/plans'
 import { STATUS_LABEL, type AdminUser, type AuditLog, type Module, type Plan, type SubscriptionStatus } from '../../lib/types'
 
 export function AdminDashboardPage() {
@@ -189,7 +189,7 @@ export function AdminUsersPage() {
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div className="min-w-0">
                     <div className="font-medium">{u.full_name ?? '—'}</div>
-                    <div className="truncate text-xs text-stone-500">{u.email} · desde {formatDate(u.created_at)}</div>
+                    <div className="truncate text-xs text-stone-500">{u.email} · desde {formatDate(u.created_at)}{u.last_sign_in_at ? '' : ' · nunca entrou'}</div>
                   </div>
                   <div className="flex flex-wrap gap-1">
                     {u.roles.filter((r) => r !== 'user').map((r) => <span key={r} className="badge bg-stone-100 text-stone-700 dark:bg-stone-800 dark:text-stone-300">{roleLabel[r]}</span>)}
@@ -213,6 +213,7 @@ export function AdminUsersPage() {
                     </button>
                   )}
                   <button className="btn-outline !px-2.5 !py-1.5 text-xs" onClick={() => setEditing(u)}><CreditCard className="size-3.5" /> {u.plan_key ? 'Editar plano' : 'Dar plano'}</button>
+                  {!u.last_sign_in_at && <AccessLinkButton userId={u.id} name={u.full_name ?? u.email} />}
                   {isPro && (u.professional_approved
                     ? <button className="btn-ghost !px-2.5 !py-1.5 text-xs" onClick={() => void run(supabase.rpc('admin_approve_professional', { _user: u.id, _approve: false }))}><CircleDashed className="size-3.5" /> Suspender registro</button>
                     : <button className="btn-outline !px-2.5 !py-1.5 text-xs" onClick={() => void run(supabase.rpc('admin_approve_professional', { _user: u.id, _approve: true }))}><BadgeCheck className="size-3.5" /> Aprovar registro</button>)}

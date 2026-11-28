@@ -18,9 +18,10 @@ const SITE_URL = Deno.env.get('SITE_URL') ?? 'https://assistente-pessoal-pink.ve
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 interface Body {
+  user_id?: string
   email?: string
   full_name?: string
-  mode?: 'admin' | 'professional'
+  mode?: 'admin' | 'professional' | 'access_link'
   account_type?: 'user' | 'professional'
   plan_key?: string
   pro_modules?: string[]
@@ -39,6 +40,35 @@ Deno.serve(async (req) => {
 
   let body: Body
   try { body = await req.json() } catch { return json({ error: 'Corpo inválido' }, 400) }
+
+  // ------------------------------------------------------------ Link de acesso (conta existente)
+  // Gera link para criar/redefinir senha sem depender de e-mail.
+  // Admin: qualquer usuário. Profissional: apenas clientes vinculados a ele.
+  if (body.mode === 'access_link') {
+    if (!body.user_id) return json({ error: 'Usuário não informado' }, 400)
+    const { data: r } = await db.from('user_roles').select('role').eq('user_id', caller.id)
+    const admin = (r ?? []).some((x) => x.role === 'admin')
+    if (!admin) {
+      const { data: link } = await db.from('professional_client_links').select('id')
+        .eq('professional_id', caller.id).eq('client_id', body.user_id).in('status', ['invited', 'active']).maybeSingle()
+      if (!link) return json({ error: 'Acesso negado' }, 403)
+    }
+    const { data: target, error: uErr } = await db.auth.admin.getUserById(body.user_id)
+    if (uErr || !target?.user?.email) return json({ error: 'Usuário não encontrado' }, 404)
+    // Segurança: só para primeiro acesso. Quem já entrou troca a senha pelo próprio
+    // app (evita que admin/profissional assumam uma conta em uso).
+    if (target.user.last_sign_in_at) {
+      return json({ error: 'Esta pessoa já acessou a conta. Para trocar a senha, ela usa "Configurações → Alterar senha" ou "Esqueci a senha" no login.' }, 409)
+    }
+    const { data, error } = await db.auth.admin.generateLink({
+      type: 'recovery',
+      email: target.user.email,
+      options: { redirectTo: `${SITE_URL}/nova-senha?boas-vindas=1` },
+    })
+    if (error) return json({ error: error.message }, 400)
+    await db.from('audit_logs').insert({ actor_id: caller.id, subject_id: body.user_id, action: 'access_link', table_name: 'auth.users', record_id: body.user_id, changes: { motivo: 'link de primeiro acesso gerado' } })
+    return json({ ok: true, action_link: data.properties?.action_link, name: target.user.user_metadata?.full_name ?? target.user.email })
+  }
   const email = (body.email ?? '').trim().toLowerCase()
   const fullName = (body.full_name ?? '').trim()
   if (!EMAIL_RE.test(email)) return json({ error: 'E-mail inválido' }, 400)

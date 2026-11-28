@@ -238,7 +238,7 @@ export function ForgotPasswordPage() {
   return (
     <AuthShell title="Recuperar senha" subtitle="Enviaremos um link para criar uma nova senha." footer={<Link to="/entrar" className="text-brand-700 dark:text-brand-300">Voltar para o login</Link>}>
       {done ? (
-        <Alert kind="success">Se houver uma conta com <strong>{email}</strong>, o link chegará em instantes.</Alert>
+        <Alert kind="success">Se houver uma conta com <strong>{email}</strong>, o link chegará em alguns minutos (confira o spam). Se não chegar, peça ao seu profissional ou ao suporte um novo link de acesso.</Alert>
       ) : (
         <form onSubmit={submit} className="space-y-4">
           {error && <Alert>{error}</Alert>}

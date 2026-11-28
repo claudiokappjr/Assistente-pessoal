@@ -7,7 +7,7 @@ import { formatDate } from '../../lib/format'
 import { errorMessage, supabase } from '../../lib/supabase'
 import type { Consent, Link, Module, ProfessionalProfile, Profile, Specialty } from '../../lib/types'
 import { MODULES } from '../../modules/config'
-import { AccessLink, ProPlanPicker } from '../../components/plans'
+import { AccessLink, AccessLinkButton, ProPlanPicker } from '../../components/plans'
 import { STATUS_LABEL } from '../../lib/types'
 import { ModulePage } from '../../modules/ModulePage'
 
@@ -336,7 +336,9 @@ export function ProClientDetailPage() {
   return (
     <div>
       <RouterLink to="/pro/clientes" className="btn-ghost mb-3 !px-2"><ArrowLeft className="size-4" /> Clientes</RouterLink>
-      <PageHeader title={name ?? 'Cliente'} subtitle={link?.status === 'active' ? `Cliente desde ${formatDate(link.accepted_at)} · somente leitura` : 'Vínculo não está ativo'} />
+      <PageHeader title={name ?? 'Cliente'} subtitle={link?.status === 'active' ? `Cliente desde ${formatDate(link.accepted_at)} · somente leitura` : 'Vínculo não está ativo'}
+        actions={link && link.status !== 'ended' && <div className="flex flex-wrap justify-end gap-2"><AccessLinkButton userId={clientId!} name={name ?? 'Cliente'} className="btn-outline" /></div>} />
+      {link?.status === 'invited' && <div className="mb-4"><Alert kind="info">O cliente ainda não aceitou o convite. Se ele não conseguiu entrar, gere um novo link de acesso e envie por WhatsApp.</Alert></div>}
       {link?.status !== 'active' ? (
         <Alert kind="info">O cliente precisa aceitar o convite para você ver qualquer informação.</Alert>
       ) : allowed.length === 0 ? (

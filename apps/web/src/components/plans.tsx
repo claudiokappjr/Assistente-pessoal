@@ -1,6 +1,6 @@
-import { Check, Copy, MessageCircle } from 'lucide-react'
+import { Check, Copy, KeyRound, MessageCircle } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { supabase } from '../lib/supabase'
+import { errorMessage, supabase } from '../lib/supabase'
 import type { Module, Plan } from '../lib/types'
 import { money } from '../modules/config'
 
@@ -80,5 +80,33 @@ export function AccessLink({ link, name }: { link: string; name: string }) {
       </div>
       <p className="mt-2 text-xs text-stone-500">O link funciona uma única vez e expira. Se expirar, a pessoa entra na tela de login, toca em "Esqueci a senha" e usa este mesmo e-mail.</p>
     </div>
+  )
+}
+
+/** Gera link de primeiro acesso para conta que ainda não entrou (sem depender de e-mail). */
+export function AccessLinkButton({ userId, name, className = 'btn-outline !px-2.5 !py-1.5 text-xs' }: { userId: string; name: string; className?: string }) {
+  const [busy, setBusy] = useState(false)
+  const [link, setLink] = useState('')
+  const [error, setError] = useState('')
+  async function generate() {
+    setBusy(true); setError(''); setLink('')
+    const { data, error } = await supabase.functions.invoke('manage-users', { body: { mode: 'access_link', user_id: userId } })
+    setBusy(false)
+    if (error) {
+      let detail = errorMessage(error)
+      try { detail = (await (error as { context?: Response }).context?.json())?.error ?? detail } catch { /* sem corpo */ }
+      return setError(detail)
+    }
+    setLink(data.action_link)
+  }
+  return (
+    <>
+      <button type="button" className={className} disabled={busy} onClick={() => void generate()}><KeyRound className="size-3.5" /> Link de acesso</button>
+      {(link || error) && (
+        <div className="basis-full">
+          {error ? <p className="mt-2 text-xs text-red-700 dark:text-red-400">{error}</p> : <div className="mt-2"><AccessLink link={link} name={name} /></div>}
+        </div>
+      )}
+    </>
   )
 }
