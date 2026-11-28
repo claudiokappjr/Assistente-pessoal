@@ -37,7 +37,7 @@ const EXAM_SCHEMA = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['marker', 'category', 'is_numeric', 'numeric_value', 'text_value', 'unit', 'ref_low', 'ref_high', 'ref_text', 'flag'],
+        required: ['marker', 'category', 'is_numeric', 'numeric_value', 'text_value', 'unit', 'ref_low', 'ref_high', 'ref_text', 'flag', 'previous'],
         properties: {
           marker: { type: 'string', description: 'Nome padronizado do analito em português, ex.: "Hemoglobina", "Glicose", "Colesterol LDL", "TSH".' },
           category: { type: 'string', description: 'Grupo, ex.: "Hemograma", "Lipídios", "Tireoide"; "" se não houver.' },
@@ -49,6 +49,21 @@ const EXAM_SCHEMA = {
           ref_high: { type: 'string', description: 'Limite superior de referência como número com ponto; "" se não houver.' },
           ref_text: { type: 'string', description: 'Texto da referência como impresso; "" se não houver.' },
           flag: { type: 'string', enum: ['baixo', 'normal', 'alto', 'alterado', 'sem_referencia'] },
+          previous: {
+            type: 'array',
+            description: 'Resultados anteriores impressos no laudo para este mesmo analito (histórico, "resultados anteriores", "evolutivo"). Vazio se não houver.',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['date', 'is_numeric', 'numeric_value', 'text_value'],
+              properties: {
+                date: { type: 'string', description: 'Data da medição anterior AAAA-MM-DD (se só houver mês/ano, use o dia 01).' },
+                is_numeric: { type: 'boolean' },
+                numeric_value: { type: 'number', description: 'Valor com ponto decimal; 0 se não numérico.' },
+                text_value: { type: 'string', description: 'Valor em texto quando não numérico; "" se numérico.' },
+              },
+            },
+          },
         },
       },
     },
@@ -90,6 +105,7 @@ Regras:
 - Números: ponto decimal e sem separador de milhar (13,5 → 13.5; 250.000 → 250000).
 - Referência "70 a 99" → ref_low 70, ref_high 99. "Inferior a 200" → só ref_high 200. "Superior a 40" → só ref_low 40. Referências por faixa (sexo/idade): copie em ref_text e preencha limites só se houver uma faixa claramente aplicável.
 - flag: compare o valor com a referência; se o laudo marcar alterado use "alterado"; sem referência use "sem_referencia".
+- MUITO IMPORTANTE: muitos laudos trazem, ao lado ou abaixo de cada exame, os resultados anteriores do paciente (com data e valor), às vezes em tabela "evolutivo" ou "resultados anteriores". Leia TODOS e coloque em previous do analito correspondente, cada um com sua data. Não confunda com a faixa de referência. Não repita a medição atual em previous.
 - Se o documento não for um exame laboratorial, is_lab_exam = false e results vazio.`
 
 const RX_SYSTEM = `Você transcreve receitas médicas brasileiras para dados estruturados.
@@ -121,12 +137,20 @@ Deno.serve(async (req) => {
   const { count: active } = await db.from('subscriptions').select('id', { count: 'exact', head: true }).eq('user_id', user.id).eq('status', 'active')
   if (!active) return json({ error: 'Sua assinatura não está ativa.' }, 402)
 
-  let path = '', kind = ''
+  let path = '', kind = '', reprocess: string | null = null
   try {
     const b = await req.json()
     path = String(b.path ?? '')
     kind = String(b.kind ?? '')
+    reprocess = b.exam_id ? String(b.exam_id) : null
   } catch { return json({ error: 'Corpo inválido' }, 400) }
+  // Ler de novo um exame já enviado: usa o arquivo dele e apaga os resultados antigos.
+  if (reprocess) {
+    const { data: ex } = await db.from('lab_exams').select('id, file_path').eq('id', reprocess).eq('owner_id', user.id).maybeSingle()
+    if (!ex?.file_path) return json({ error: 'Exame sem arquivo para ler de novo.' }, 404)
+    path = ex.file_path
+    kind = 'exam'
+  }
   if (!['exam', 'prescription'].includes(kind)) return json({ error: 'Tipo inválido' }, 400)
   if (!path.startsWith(`${user.id}/`) || path.includes('..')) return json({ error: 'Arquivo inválido' }, 403)
 
@@ -139,7 +163,11 @@ Deno.serve(async (req) => {
 
   // Exame: cria o registro já como "processando" para aparecer na lista.
   let examId: string | null = null
-  if (kind === 'exam') {
+  if (reprocess) {
+    await db.from('lab_results').delete().eq('exam_id', reprocess)
+    await db.from('lab_exams').update({ status: 'processando', error: null }).eq('id', reprocess)
+    examId = reprocess
+  } else if (kind === 'exam') {
     const { data, error } = await db.from('lab_exams')
       .insert({ owner_id: user.id, file_path: path, status: 'processando', title: 'Lendo exame…' })
       .select('id').single()
@@ -194,18 +222,29 @@ Deno.serve(async (req) => {
   }
 
   if (!out.is_lab_exam) return await fail('Não encontrei resultados de exame nesse arquivo.', 422)
-  const rows = (out.results ?? [])
-    .filter((r: { marker: string }) => str(r.marker))
-    .map((r: Record<string, unknown>, i: number) => {
-      const value = r.is_numeric ? num(r.numeric_value) : null
-      const value_text = value === null ? (str(r.text_value) ?? '—') : null
-      return {
-        exam_id: examId, owner_id: user.id, position: i,
-        marker: str(r.marker), category: str(r.category), value, value_text, unit: str(r.unit),
-        ref_low: num(r.ref_low), ref_high: num(r.ref_high), ref_text: str(r.ref_text),
-        flag: ['baixo', 'normal', 'alto', 'alterado'].includes(String(r.flag)) ? r.flag : null,
-      }
+  const collected = date(out.collected_on)
+  const rows: Record<string, unknown>[] = []
+  ;(out.results ?? []).filter((r: { marker: string }) => str(r.marker)).forEach((r: Record<string, unknown>, i: number) => {
+    const value = r.is_numeric ? num(r.numeric_value) : null
+    const value_text = value === null ? (str(r.text_value) ?? '—') : null
+    const base = { exam_id: examId, owner_id: user.id, position: i, marker: str(r.marker), category: str(r.category), unit: str(r.unit) }
+    rows.push({
+      ...base, value, value_text,
+      ref_low: num(r.ref_low), ref_high: num(r.ref_high), ref_text: str(r.ref_text),
+      flag: ['baixo', 'normal', 'alto', 'alterado'].includes(String(r.flag)) ? r.flag : null,
+      is_previous: false, measured_on: collected,
     })
+    const seen = new Set<string>()
+    for (const p of (r.previous as Record<string, unknown>[] | undefined) ?? []) {
+      const d = date(p.date)
+      if (!d || d === collected || seen.has(d)) continue
+      seen.add(d)
+      const pv = p.is_numeric ? num(p.numeric_value) : null
+      const pt = pv === null ? str(p.text_value) : null
+      if (pv === null && !pt) continue
+      rows.push({ ...base, value: pv, value_text: pt, ref_low: null, ref_high: null, ref_text: null, flag: null, is_previous: true, measured_on: d })
+    }
+  })
   if (!rows.length) return await fail('Não encontrei resultados de exame nesse arquivo.', 422)
 
   const { error: insErr } = await db.from('lab_results').insert(rows)
@@ -214,8 +253,9 @@ Deno.serve(async (req) => {
     status: 'revisar', error: null,
     title: str(out.title) ?? 'Exame laboratorial',
     lab_name: str(out.lab_name),
-    ...(date(out.collected_on) ? { collected_on: date(out.collected_on) } : {}),
+    ...(collected ? { collected_on: collected } : {}),
   }).eq('id', examId)
 
-  return json({ exam_id: examId, results: rows.length, usage: body.usage })
+  const previous = rows.filter((r) => r.is_previous).length
+  return json({ exam_id: examId, results: rows.length - previous, previous, usage: body.usage })
 })

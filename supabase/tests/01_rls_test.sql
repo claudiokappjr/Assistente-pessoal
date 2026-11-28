@@ -445,6 +445,9 @@ insert into public.medications (name, dose, frequency) values ('Losartana', '50 
 insert into public.consultations (specialty, professional_name, summary) values ('Cardiologia', 'Dr. Bruno', 'Ajuste de pressão');
 select test.ok((select marker_key from public.lab_results where marker like 'Colesterol%') = 'colesterol total', 'Marcador é normalizado para o gráfico');
 select test.fails($$insert into public.lab_results (exam_id, marker) values ('40000000-0000-0000-0000-000000000001', 'Vazio')$$, 'Resultado sem valor é recusado');
+select test.fails($$insert into public.lab_results (exam_id, marker, value, is_previous) values ('40000000-0000-0000-0000-000000000001', 'Glicose', 90, true)$$, 'Resultado anterior exige a data da medição');
+insert into public.lab_results (exam_id, marker, value, is_previous, measured_on) values ('40000000-0000-0000-0000-000000000001', 'Glicose', 90, true, '2025-03-12');
+select test.ok((select count(*) from public.lab_results where is_previous and measured_on = '2025-03-12') = 1, 'Resultado anterior do laudo fica guardado com a data');
 commit;
 
 begin;

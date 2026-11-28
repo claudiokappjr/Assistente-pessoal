@@ -16,6 +16,7 @@ interface LabResult {
   id?: string; exam_id?: string; position: number; marker: string; marker_key?: string; category: string | null
   value: number | null; value_text: string | null; unit: string | null
   ref_low: number | null; ref_high: number | null; ref_text: string | null; flag: Flag | null
+  is_previous?: boolean; measured_on?: string | null
 }
 interface LabExam {
   id: string; owner_id: string; collected_on: string; lab_name: string | null; title: string | null; file_path: string | null
@@ -52,6 +53,13 @@ const FLAG_STYLE: Record<Flag, string> = {
   normal: 'bg-brand-100 text-brand-800 dark:bg-brand-900 dark:text-brand-200',
 }
 const FLAG_LABEL: Record<Flag, string> = { baixo: 'Abaixo', alto: 'Acima', alterado: 'Alterado', normal: 'Na referência' }
+/** Situação do resultado: calculada pela faixa quando há números; senão, a do laudo. */
+const effFlag = (r: Pick<LabResult, 'value' | 'ref_low' | 'ref_high' | 'flag'>): Flag | null =>
+  r.flag === 'alterado' && r.value == null ? r.flag : autoFlag(r.value, r.ref_low, r.ref_high, r.flag)
+const current = (e: LabExam) => e.lab_results.filter((r) => !r.is_previous)
+const previousOf = (e: LabExam, r: LabResult) =>
+  e.lab_results.filter((p) => p.is_previous && (p.marker_key ?? p.marker.toLowerCase()) === (r.marker_key ?? r.marker.toLowerCase()) && p.measured_on)
+    .sort((a, b) => a.measured_on!.localeCompare(b.measured_on!))
 const refLabel = (r: Pick<LabResult, 'ref_low' | 'ref_high' | 'ref_text'>) =>
   r.ref_low != null && r.ref_high != null ? `${fmt(r.ref_low)} a ${fmt(r.ref_high)}`
     : r.ref_high != null ? `até ${fmt(r.ref_high)}` : r.ref_low != null ? `acima de ${fmt(r.ref_low)}` : r.ref_text ?? ''
@@ -123,6 +131,9 @@ function useExams(owner: string) {
   return { exams, load }
 }
 
+const readMsg = (d: { results: number; previous?: number }) =>
+  `${d.results} resultados lidos${d.previous ? ` e ${d.previous} resultados anteriores guardados no histórico` : ''}. Confira e marque como conferido.`
+
 const STATUS: Record<LabExam['status'], { text: string; cls: string }> = {
   processando: { text: 'Lendo…', cls: 'bg-stone-100 text-stone-600 dark:bg-stone-800 dark:text-stone-300' },
   revisar: { text: 'Para conferir', cls: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300' },
@@ -134,6 +145,7 @@ function ExamsTab({ owner, readOnly }: { owner: string; readOnly: boolean }) {
   const { exams, load } = useExams(owner)
   const [view, setView] = useState<'exames' | 'graficos'>('exames')
   const [editing, setEditing] = useState<LabExam | 'novo' | null>(null)
+  const [viewing, setViewing] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<{ kind: 'error' | 'success'; text: string } | null>(null)
 
@@ -151,8 +163,19 @@ function ExamsTab({ owner, readOnly }: { owner: string; readOnly: boolean }) {
       void load()
       const { data, error } = await supabase.functions.invoke('health-doc-parse', { body: { path, kind: 'exam' } })
       if (error) setMsg({ kind: 'error', text: await fnError(error) })
-      else setMsg({ kind: 'success', text: `${data.results} resultados lidos. Confira os valores e marque como conferido.` })
+      else { setMsg({ kind: 'success', text: readMsg(data) }); setViewing(data.exam_id) }
     } catch (e) { setMsg({ kind: 'error', text: errorMessage(e) }) }
+    setBusy(false)
+    void load()
+  }
+
+  async function reread(exam: LabExam) {
+    if (!confirm('Ler este exame de novo com a IA? As correções que você fez nele serão substituídas.')) return
+    setViewing(null); setBusy(true); setMsg(null)
+    void load()
+    const { data, error } = await supabase.functions.invoke('health-doc-parse', { body: { exam_id: exam.id } })
+    if (error) setMsg({ kind: 'error', text: await fnError(error) })
+    else { setMsg({ kind: 'success', text: readMsg(data) }); setViewing(exam.id) }
     setBusy(false)
     void load()
   }
@@ -183,10 +206,11 @@ function ExamsTab({ owner, readOnly }: { owner: string; readOnly: boolean }) {
       ) : (
         <ul className="space-y-2">
           {exams.map((e) => {
-            const altered = e.lab_results.filter((r) => r.flag && r.flag !== 'normal').length
+            const cur = current(e)
+            const altered = cur.filter((r) => { const f = effFlag(r); return f && f !== 'normal' }).length
             return (
               <li key={e.id}>
-                <button onClick={() => e.status !== 'processando' && setEditing(e)} className="card flex w-full items-center gap-3 !p-4 text-left hover:border-brand-300">
+                <button onClick={() => e.status !== 'processando' && (e.status === 'falhou' && !readOnly ? setEditing(e) : setViewing(e.id))} className="card flex w-full items-center gap-3 !p-4 text-left hover:border-brand-300">
                   <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-sand-200 text-brand-700 dark:bg-stone-800 dark:text-brand-300"><FlaskConical className="size-5" /></div>
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
@@ -194,7 +218,7 @@ function ExamsTab({ owner, readOnly }: { owner: string; readOnly: boolean }) {
                       <span className={`badge ${STATUS[e.status].cls}`}>{e.status === 'processando' && <Spinner className="size-3" />}{STATUS[e.status].text}</span>
                     </div>
                     <div className="truncate text-xs text-stone-500">
-                      {[br(e.collected_on), e.lab_name, e.lab_results.length ? `${e.lab_results.length} resultados` : null, altered ? `${altered} fora da referência` : null].filter(Boolean).join(' · ')}
+                      {[br(e.collected_on), e.lab_name, cur.length ? `${cur.length} resultados` : null, altered ? `${altered} fora da referência` : null].filter(Boolean).join(' · ')}
                     </div>
                     {e.status === 'falhou' && e.error && <div className="text-xs text-red-700 dark:text-red-400">{e.error}</div>}
                   </div>
@@ -205,6 +229,11 @@ function ExamsTab({ owner, readOnly }: { owner: string; readOnly: boolean }) {
         </ul>
       ))}
       {view === 'graficos' && <MarkersView exams={exams} />}
+      {viewing && exams.find((e) => e.id === viewing) && (
+        <ExamView exam={exams.find((e) => e.id === viewing)!} readOnly={readOnly} onClose={() => setViewing(null)}
+          onEdit={() => { setEditing(exams.find((e) => e.id === viewing)!); setViewing(null) }}
+          onReread={() => void reread(exams.find((e) => e.id === viewing)!)} />
+      )}
       {editing && (
         <ExamForm exam={editing === 'novo' ? null : editing} owner={owner} readOnly={readOnly}
           onClose={() => setEditing(null)} onSaved={() => { setEditing(null); void load() }} />
@@ -225,7 +254,7 @@ function ExamForm({ exam, owner, readOnly, onClose, onSaved }: { exam: LabExam |
   const [title, setTitle] = useState(exam?.title === 'Exame não lido' ? '' : exam?.title ?? '')
   const [lab, setLab] = useState(exam?.lab_name ?? '')
   const [notes, setNotes] = useState(exam?.notes ?? '')
-  const [rows, setRows] = useState<ResultRow[]>(exam?.lab_results.length ? exam.lab_results.map(toRow) : [emptyRow()])
+  const [rows, setRows] = useState<ResultRow[]>(exam && current(exam).length ? current(exam).map(toRow) : [emptyRow()])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const setRow = (i: number, k: keyof ResultRow, v: string) => setRows((rs) => rs.map((r, j) => (j === i ? { ...r, [k]: v } : r)))
@@ -239,7 +268,7 @@ function ExamForm({ exam, owner, readOnly, onClose, onSaved }: { exam: LabExam |
     if (id) {
       const { error } = await supabase.from('lab_exams').update(header).eq('id', id)
       if (error) { setBusy(false); return setError(errorMessage(error)) }
-      const { error: delErr } = await supabase.from('lab_results').delete().eq('exam_id', id)
+      const { error: delErr } = await supabase.from('lab_results').delete().eq('exam_id', id).eq('is_previous', false)
       if (delErr) { setBusy(false); return setError(errorMessage(delErr)) }
     } else {
       const { data, error } = await supabase.from('lab_exams').insert({ ...header, owner_id: owner }).select('id').single()
@@ -252,6 +281,7 @@ function ExamForm({ exam, owner, readOnly, onClose, onSaved }: { exam: LabExam |
         exam_id: id, owner_id: owner, position: i, marker: r.marker.trim(), category: r.category.trim() || null,
         value: v, value_text: v == null ? r.value.trim() : null, unit: r.unit.trim() || null,
         ref_low: lo, ref_high: hi, ref_text: r.ref_text.trim() || null, flag: autoFlag(v, lo, hi, r.flag),
+        is_previous: false, measured_on: collected,
       }
     })
     const { error: insErr } = await supabase.from('lab_results').insert(payload)
@@ -308,6 +338,10 @@ function ExamForm({ exam, owner, readOnly, onClose, onSaved }: { exam: LabExam |
                 <input className="input col-span-3 sm:col-span-1" placeholder="mín." inputMode="decimal" value={r.ref_low} onChange={(e) => setRow(i, 'ref_low', e.target.value)} aria-label="Referência mínima" />
                 <input className="input col-span-3 sm:col-span-1" placeholder="máx." inputMode="decimal" value={r.ref_high} onChange={(e) => setRow(i, 'ref_high', e.target.value)} aria-label="Referência máxima" />
                 {r.ref_text && !r.ref_low && !r.ref_high && <p className="col-span-6 text-xs text-stone-500 sm:col-span-5">Referência do laudo: {r.ref_text}</p>}
+                {exam && (() => {
+                  const prev = exam.lab_results.filter((p) => p.is_previous && p.marker.trim().toLowerCase() === r.marker.trim().toLowerCase())
+                  return prev.length > 0 && <p className="col-span-6 text-xs text-stone-500 sm:col-span-5">Anteriores no laudo: {prev.map((p) => `${br(p.measured_on)}: ${p.value != null ? fmt(p.value) : p.value_text}`).join(' · ')}</p>
+                })()}
               </li>
             ))}
           </ul>
@@ -347,8 +381,171 @@ function ResultsTable({ results }: { results: LabResult[] }) {
   )
 }
 
+// ------------------------------------------------------------------ leitura didática do exame
+const ZONE = {
+  baixo: { bar: 'bg-amber-400', text: 'text-amber-700 dark:text-amber-300', chip: 'bg-amber-500', label: 'Abaixo do mínimo' },
+  normal: { bar: 'bg-emerald-500', text: 'text-emerald-700 dark:text-emerald-300', chip: 'bg-emerald-600', label: 'Dentro da faixa' },
+  alto: { bar: 'bg-red-500', text: 'text-red-700 dark:text-red-300', chip: 'bg-red-600', label: 'Acima do máximo' },
+} as const
+
+/**
+ * Régua colorida: amarelo (abaixo), verde (faixa de referência), vermelho (acima).
+ * O marcador "anda" até o valor do exame ao aparecer na tela.
+ */
+function RangeGauge({ value, lo, hi, unit, delay = 0 }: { value: number; lo: number | null; hi: number | null; unit: string | null; delay?: number }) {
+  const [shown, setShown] = useState(false)
+  useEffect(() => { const t = setTimeout(() => setShown(true), 80 + delay); return () => clearTimeout(t) }, [delay])
+
+  let dMin: number, dMax: number
+  if (lo != null && hi != null) {
+    const span = hi - lo || Math.abs(hi) || 1
+    dMin = Math.min(lo - span * 0.6, value - span * 0.15)
+    dMax = Math.max(hi + span * 0.6, value + span * 0.15)
+    if (lo >= 0 && dMin < 0) dMin = 0
+  } else if (hi != null) {
+    dMin = Math.min(0, value)
+    dMax = Math.max(hi * 1.5, value * 1.15, hi + 1)
+  } else {
+    dMin = Math.min(0, value)
+    dMax = Math.max(lo! * 2, value * 1.15, lo! + 1)
+  }
+  const pct = (v: number) => Math.min(97, Math.max(3, ((v - dMin) / (dMax - dMin)) * 100))
+  const loP = lo != null ? pct(lo) : 0
+  const hiP = hi != null ? pct(hi) : 100
+  const zone: keyof typeof ZONE = lo != null && value < lo ? 'baixo' : hi != null && value > hi ? 'alto' : 'normal'
+  const z = ZONE[zone]
+  const pos = pct(value)
+  const u = unit ? ` ${unit}` : ''
+  const explain = zone === 'alto'
+    ? `${fmt(+(value - hi!).toFixed(2))}${u} acima do máximo (${fmt(hi)}) — ${Math.round(((value - hi!) / Math.abs(hi! || 1)) * 100)}% a mais.`
+    : zone === 'baixo'
+      ? `${fmt(+(lo! - value).toFixed(2))}${u} abaixo do mínimo (${fmt(lo)}) — ${Math.round(((lo! - value) / Math.abs(lo! || 1)) * 100)}% a menos.`
+      : lo != null && hi != null
+        ? `Entre ${fmt(lo)} e ${fmt(hi)}${u}: ${(() => { const r = (value - lo) / (hi - lo || 1); return r < 0.2 ? 'perto do mínimo' : r > 0.8 ? 'perto do máximo' : 'no meio da faixa' })()}.`
+        : hi != null ? `Abaixo do limite de ${fmt(hi)}${u}.` : `Acima do mínimo de ${fmt(lo)}${u}.`
+
+  return (
+    <div>
+      <div className="relative pt-9 pb-6">
+        {/* balão com o valor */}
+        <div className="absolute top-0 -translate-x-1/2 transition-[left] duration-[1100ms] ease-[cubic-bezier(.22,1,.36,1)] motion-reduce:transition-none"
+          style={{ left: `${shown ? pos : 0}%` }}>
+          <div className={`whitespace-nowrap rounded-lg px-2 py-0.5 text-xs font-semibold text-white shadow tabular-nums ${z.chip} transition-opacity duration-500 ${shown ? 'opacity-100' : 'opacity-0'}`}>
+            {fmt(value)}{u}
+          </div>
+          <div className={`mx-auto size-0 border-x-[5px] border-t-[6px] border-x-transparent ${zone === 'alto' ? 'border-t-red-600' : zone === 'baixo' ? 'border-t-amber-500' : 'border-t-emerald-600'}`} />
+        </div>
+        {/* barra em três cores */}
+        <div className="relative flex h-3 overflow-hidden rounded-full bg-stone-200 dark:bg-stone-800">
+          {lo != null && <div className={`h-full ${ZONE.baixo.bar} origin-left transition-transform duration-700 ${shown ? 'scale-x-100' : 'scale-x-0'} ${zone === 'baixo' ? '' : 'opacity-45'}`} style={{ width: `${loP}%` }} />}
+          <div className={`h-full ${ZONE.normal.bar} origin-left transition-transform delay-150 duration-700 ${shown ? 'scale-x-100' : 'scale-x-0'} ${zone === 'normal' ? '' : 'opacity-45'}`} style={{ width: `${hiP - loP}%` }} />
+          {hi != null && <div className={`h-full ${ZONE.alto.bar} origin-left transition-transform delay-300 duration-700 ${shown ? 'scale-x-100' : 'scale-x-0'} ${zone === 'alto' ? '' : 'opacity-45'}`} style={{ width: `${100 - hiP}%` }} />}
+        </div>
+        {/* ponto do valor */}
+        <div className="absolute top-9 -translate-x-1/2 transition-[left] duration-[1100ms] ease-[cubic-bezier(.22,1,.36,1)] motion-reduce:transition-none" style={{ left: `${shown ? pos : 0}%` }}>
+          <span className="relative -mt-1 block size-5">
+            {zone !== 'normal' && shown && <span className={`absolute inset-0 rounded-full ${z.chip} opacity-60 motion-safe:animate-ping`} />}
+            <span className={`absolute inset-0 rounded-full border-[3px] border-white shadow ${z.chip} dark:border-stone-900`} />
+          </span>
+        </div>
+        {/* mínimo e máximo */}
+        {lo != null && <span className="absolute bottom-0 -translate-x-1/2 text-[11px] text-stone-500 tabular-nums" style={{ left: `${loP}%` }}>mín {fmt(lo)}</span>}
+        {hi != null && <span className="absolute bottom-0 -translate-x-1/2 text-[11px] text-stone-500 tabular-nums" style={{ left: `${hiP}%` }}>máx {fmt(hi)}</span>}
+      </div>
+      <p className="mt-1 text-sm"><b className={z.text}>{z.label}.</b> <span className="text-stone-600 dark:text-stone-400">{explain}</span></p>
+    </div>
+  )
+}
+
+function ResultCard({ r, previous, delay }: { r: LabResult; previous: LabResult[]; delay: number }) {
+  const flag = effFlag(r)
+  const hasRange = r.value != null && (r.ref_low != null || r.ref_high != null)
+  const prevNum = previous.filter((p) => p.value != null)
+  const last = prevNum[prevNum.length - 1]
+  const diff = r.value != null && last?.value != null ? r.value - last.value : null
+  const series = r.value != null ? [...prevNum.map((p) => Number(p.value)), r.value] : []
+  return (
+    <li className="card !p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="font-medium">{r.marker}</div>
+          {!hasRange && <div className="text-xs text-stone-500">{r.ref_text ? `Referência: ${r.ref_text}` : 'Sem faixa de referência no laudo'}</div>}
+        </div>
+        <div className="text-right">
+          <div className="font-display text-xl font-semibold tabular-nums">{r.value != null ? fmt(r.value) : r.value_text}</div>
+          <div className="text-xs text-stone-500">{r.unit}</div>
+        </div>
+      </div>
+      {hasRange && <div className="mt-1"><RangeGauge value={r.value!} lo={r.ref_low} hi={r.ref_high} unit={r.unit} delay={delay} /></div>}
+      {!hasRange && flag && flag !== 'normal' && <span className={`badge mt-2 ${FLAG_STYLE[flag]}`}>{FLAG_LABEL[flag]}</span>}
+      {previous.length > 0 && (
+        <div className="mt-3 flex items-center gap-3 rounded-xl bg-stone-50 px-3 py-2 text-xs dark:bg-stone-800/60">
+          {series.length > 1 && <Sparkline values={series} />}
+          <div className="min-w-0 flex-1">
+            <div className="text-stone-500">Anteriores: {previous.slice(-4).map((p) => `${br(p.measured_on)} → ${p.value != null ? fmt(p.value) : p.value_text}`).join(' · ')}</div>
+            {diff != null && diff !== 0 && (
+              <div className="font-medium text-stone-700 dark:text-stone-300">{diff > 0 ? '▲ Subiu' : '▼ Desceu'} {fmt(+Math.abs(diff).toFixed(2))}{r.unit ? ` ${r.unit}` : ''} desde {br(last.measured_on)}</div>
+            )}
+            {diff === 0 && <div className="font-medium text-stone-700 dark:text-stone-300">= Igual ao de {br(last.measured_on)}</div>}
+          </div>
+        </div>
+      )}
+    </li>
+  )
+}
+
+function ExamView({ exam, readOnly, onClose, onEdit, onReread }: { exam: LabExam; readOnly: boolean; onClose: () => void; onEdit: () => void; onReread: () => void }) {
+  const [onlyOut, setOnlyOut] = useState(false)
+  const cur = current(exam)
+  const counts = { normal: 0, alto: 0, baixo: 0, alterado: 0 }
+  cur.forEach((r) => { const f = effFlag(r); if (f) counts[f]++ })
+  const out = (r: LabResult) => { const f = effFlag(r); return f != null && f !== 'normal' }
+  const shown = onlyOut ? cur.filter(out) : cur
+  const groups = new Map<string, LabResult[]>()
+  shown.forEach((r) => { const g = r.category || 'Resultados'; groups.set(g, [...(groups.get(g) ?? []), r]) })
+  let i = 0
+
+  return (
+    <Modal title={exam.title || 'Exame'} onClose={onClose} wide>
+      <p className="-mt-2 mb-4 text-sm text-stone-500">{[br(exam.collected_on), exam.lab_name].filter(Boolean).join(' · ')}</p>
+      {exam.status === 'revisar' && !readOnly && <div className="mb-4"><Alert kind="info">Lido pela IA e ainda não conferido. Compare com o laudo e toque em "Conferir e corrigir".</Alert></div>}
+
+      <div className="mb-4 grid grid-cols-3 gap-2 text-center">
+        {([['normal', 'Dentro da faixa'], ['alto', 'Acima'], ['baixo', 'Abaixo']] as const).map(([k, l]) => (
+          <div key={k} className="rounded-2xl border border-stone-200 p-3 dark:border-stone-800">
+            <div className={`font-display text-2xl font-semibold tabular-nums ${ZONE[k].text}`}>{counts[k] + (k === 'alto' ? counts.alterado : 0)}</div>
+            <div className="flex items-center justify-center gap-1.5 text-xs text-stone-500"><span className={`size-2 rounded-full ${ZONE[k].bar}`} />{l}</div>
+          </div>
+        ))}
+      </div>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={onlyOut} onChange={(e) => setOnlyOut(e.target.checked)} /> Mostrar só os fora da faixa</label>
+        <span className="text-xs text-stone-500"><span className="text-amber-600">■</span> abaixo · <span className="text-emerald-600">■</span> faixa normal do laboratório · <span className="text-red-600">■</span> acima</span>
+      </div>
+
+      {shown.length === 0 ? <p className="text-sm text-stone-500">Nenhum resultado fora da faixa. 🎉</p> : (
+        <div className="space-y-5">
+          {[...groups.entries()].map(([g, rs]) => (
+            <section key={g}>
+              {groups.size > 1 && <h3 className="mb-2 text-sm font-semibold text-stone-500">{g}</h3>}
+              <ul className="space-y-2">{rs.map((r) => <ResultCard key={r.id ?? r.position} r={r} previous={previousOf(exam, r)} delay={Math.min(i++, 8) * 90} />)}</ul>
+            </section>
+          ))}
+        </div>
+      )}
+
+      <div className="mt-5 flex flex-wrap gap-2">
+        {exam.file_path && <button type="button" className="btn-outline" onClick={() => void openFile(exam.file_path!)}><Paperclip className="size-4" /> Ver laudo original</button>}
+        {!readOnly && exam.file_path && <button type="button" className="btn-ghost" onClick={onReread}><Sparkles className="size-4" /> Ler de novo</button>}
+        {!readOnly && <button type="button" className="btn-primary ml-auto" onClick={onEdit}><Pencil className="size-4" /> {exam.status === 'conferido' ? 'Editar' : 'Conferir e corrigir'}</button>}
+      </div>
+      <p className="mt-4 text-xs text-stone-500">A faixa de referência é a que o laboratório considera normal. Estar fora dela não é diagnóstico: converse com seu médico.</p>
+    </Modal>
+  )
+}
+
 // ------------------------------------------------------------------ evolução por marcador
-interface Point { date: string; value: number; unit: string | null; ref_low: number | null; ref_high: number | null; flag: Flag | null; checked: boolean }
+interface Point { date: string; value: number; unit: string | null; ref_low: number | null; ref_high: number | null; flag: Flag | null; checked: boolean; previous: boolean }
 
 function MarkersView({ exams }: { exams: LabExam[] }) {
   const markers = useMemo(() => {
@@ -359,11 +556,21 @@ function MarkersView({ exams }: { exams: LabExam[] }) {
         if (r.value == null) continue
         const key = r.marker_key ?? r.marker.trim().toLowerCase()
         const m = map.get(key) ?? { name: r.marker, points: [] }
-        m.points.push({ date: e.collected_on, value: Number(r.value), unit: r.unit, ref_low: r.ref_low, ref_high: r.ref_high, flag: r.flag, checked: e.status === 'conferido' })
+        const date = r.is_previous ? r.measured_on! : e.collected_on
+        m.points.push({ date, value: Number(r.value), unit: r.unit, ref_low: r.ref_low, ref_high: r.ref_high, flag: r.is_previous ? null : effFlag(r), checked: e.status === 'conferido', previous: Boolean(r.is_previous) })
+        if (!r.is_previous) m.name = r.marker
         map.set(key, m)
       }
     }
-    return [...map.entries()].map(([key, m]) => ({ key, ...m, points: m.points.sort((a, b) => a.date.localeCompare(b.date)) }))
+    return [...map.entries()].map(([key, m]) => {
+      // Mesma data em dois exames: vale o resultado do próprio exame, não o "anterior" copiado de outro laudo.
+      const byDate = new Map<string, Point>()
+      for (const p of m.points) { const o = byDate.get(p.date); if (!o || (o.previous && !p.previous)) byDate.set(p.date, p) }
+      const points = [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date))
+      const lo = [...points].reverse().find((p) => p.ref_low != null)?.ref_low ?? null
+      const hi = [...points].reverse().find((p) => p.ref_high != null)?.ref_high ?? null
+      return { key, name: m.name, points: points.map((p) => (p.previous ? { ...p, flag: autoFlag(p.value, lo, hi, null) } : p)) }
+    })
       .sort((a, b) => b.points.length - a.points.length || a.name.localeCompare(b.name))
   }, [exams])
   const [selected, setSelected] = useState<string | null>(null)
@@ -427,6 +634,7 @@ function MarkerDetail({ name, points, onBack }: { name: string; points: Point[];
           <span className="text-sm text-stone-500">Última: <b className="tabular-nums text-stone-900 dark:text-stone-100">{fmt(last.value)}</b> {unit} em {br(last.date)}</span>
         </div>
         <p className="mb-3 text-xs text-stone-500">{lo != null || hi != null ? `Faixa de referência (mais recente): ${refLabel({ ref_low: lo, ref_high: hi, ref_text: null })} ${unit}` : 'Sem faixa de referência informada.'}</p>
+        {(lo != null || hi != null) && <div className="mb-5"><RangeGauge value={last.value} lo={lo} hi={hi} unit={unit} /></div>}
         <TrendChart points={pts} lo={lo} hi={hi} unit={unit} />
         {hidden > 0 && <p className="mt-2 text-xs text-stone-500">{hidden} medição(ões) em outra unidade não aparecem no gráfico, só na tabela.</p>}
       </div>
@@ -436,9 +644,9 @@ function MarkerDetail({ name, points, onBack }: { name: string; points: Point[];
           <tbody>
             {[...points].reverse().map((p, i) => (
               <tr key={i} className="border-b border-stone-100 last:border-0 dark:border-stone-800/60">
-                <td className="px-4 py-2">{br(p.date)}{!p.checked && <span className="ml-1 text-xs text-amber-700" title="Exame ainda não conferido">•</span>}</td>
+                <td className="px-4 py-2">{br(p.date)}{!p.checked && <span className="ml-1 text-xs text-amber-700" title="Exame ainda não conferido">•</span>}{p.previous && <span className="ml-1 text-xs text-stone-400">(do histórico do laudo)</span>}</td>
                 <td className="tabular-nums">{fmt(p.value)} <span className="text-xs text-stone-500">{p.unit}</span></td>
-                <td className="text-xs text-stone-500">{refLabel({ ...p, ref_text: null })}</td>
+                <td className="text-xs text-stone-500">{p.previous ? '' : refLabel({ ...p, ref_text: null })}</td>
                 <td className="pr-4 text-right">{p.flag && p.flag !== 'normal' && <span className={`badge ${FLAG_STYLE[p.flag]}`}>{FLAG_LABEL[p.flag]}</span>}</td>
               </tr>
             ))}
