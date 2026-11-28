@@ -6,6 +6,7 @@ import {
 import { useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthProvider'
+import { usePendingCounts } from '../lib/pending'
 import { STATUS_LABEL } from '../lib/types'
 import { Logo, ThemeToggle } from './ui'
 
@@ -71,6 +72,8 @@ export function AppLayout({ area }: { area: Area }) {
   const location = useLocation()
   const enabled = new Set(modules.map((m) => m.key))
   const items = NAV[area].filter((i) => !i.module || enabled.has(i.module))
+  const pending = usePendingCounts(area === 'app')
+  const countFor = (i: Item) => (i.to === '/app/caixa-de-entrada' ? pending.total : i.module ? pending[i.module] : 0) ?? 0
   const mobileItems = MOBILE[area].map((to) => NAV[area].find((i) => i.to === to)!).filter(Boolean)
 
   const areas: { key: Area; to: string; icon: LucideIcon; show: boolean }[] = [
@@ -106,7 +109,14 @@ export function AppLayout({ area }: { area: Area }) {
       <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto">
         {items.map((i) => (
           <NavLink key={i.to} to={i.to} end={i.end} onClick={() => setOpen(false)} className={({ isActive }) => linkClass(isActive)}>
-            <i.icon className="size-[18px]" /> {i.label}
+            {({ isActive }) => (
+              <>
+                <i.icon className="size-[18px]" /> <span className="flex-1">{i.label}</span>
+                {countFor(i) > 0 && (
+                  <span className={`min-w-5 rounded-full px-1.5 text-center text-[11px] font-semibold leading-5 ${isActive ? 'bg-white/25 text-white' : 'bg-amber-500 text-white'}`}>{countFor(i)}</span>
+                )}
+              </>
+            )}
           </NavLink>
         ))}
         {area === 'app' && !hasRole('professional') && (
@@ -157,14 +167,14 @@ export function AppLayout({ area }: { area: Area }) {
         </main>
 
         <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-stone-200 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden dark:border-stone-800 dark:bg-stone-900/95">
-          {mobileItems.slice(0, 2).map((i) => <MobileLink key={i.to} item={i} />)}
+          {mobileItems.slice(0, 2).map((i) => <MobileLink key={i.to} item={i} count={countFor(i)} />)}
           <NavLink to="/app/assistente" className="flex flex-col items-center justify-center">
             <span className="-mt-5 grid size-12 place-items-center rounded-full bg-brand-700 text-white shadow-lg ring-4 ring-sand-100 dark:ring-stone-950">
               <Brain className="size-5" />
             </span>
             <span className="mt-0.5 text-[10px] text-stone-500">Assistente</span>
           </NavLink>
-          {mobileItems.slice(2, 4).map((i) => <MobileLink key={i.to} item={i} />)}
+          {mobileItems.slice(2, 4).map((i) => <MobileLink key={i.to} item={i} count={countFor(i)} />)}
         </nav>
       </div>
     </div>
@@ -198,10 +208,13 @@ function PendingSubscription({ subscriptions }: { subscriptions: ReturnType<type
   )
 }
 
-function MobileLink({ item }: { item: Item }) {
+function MobileLink({ item, count = 0 }: { item: Item; count?: number }) {
   return (
     <NavLink to={item.to} end={item.end} className={({ isActive }) => `flex flex-col items-center gap-0.5 py-2.5 text-[10px] ${isActive ? 'text-brand-700 dark:text-brand-300' : 'text-stone-500'}`}>
-      <item.icon className="size-5" />
+      <span className="relative">
+        <item.icon className="size-5" />
+        {count > 0 && <span className="absolute -right-2.5 -top-1.5 min-w-4 rounded-full bg-amber-500 px-1 text-center text-[10px] font-semibold leading-4 text-white">{count}</span>}
+      </span>
       <span className="max-w-full truncate px-1">{item.label}</span>
     </NavLink>
   )

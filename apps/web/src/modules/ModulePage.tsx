@@ -2,6 +2,7 @@ import { ChevronLeft, ChevronRight, Inbox, Pencil, Plus, Sparkles, Trash2, X } f
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../auth/AuthProvider'
+import { PendingDrafts } from '../components/PendingDrafts'
 import { MODULE_ICONS } from '../components/AppLayout'
 import { Alert, EmptyState, PageHeader, Spinner, Stat } from '../components/ui'
 import { errorMessage, supabase } from '../lib/supabase'
@@ -253,6 +254,7 @@ export function ModulePage({ config, ownerId, embedded = false, ym: ymProp, onCh
         />
       )}
 
+      {!embedded && !readOnly && <PendingDrafts moduleKey={config.key} moduleName={config.title} onDecided={() => { void load(); onChanged?.() }} />}
       {embedded && !readOnly && (
         <div className="mb-3 flex justify-end"><button className="btn-primary" onClick={() => setEditing('new')}><Plus className="size-4" /> Adicionar</button></div>
       )}

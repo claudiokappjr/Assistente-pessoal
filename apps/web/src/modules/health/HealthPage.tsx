@@ -9,6 +9,7 @@ import { Alert, EmptyState, PageHeader, Spinner } from '../../components/ui'
 import { errorMessage, supabase } from '../../lib/supabase'
 import { MODULES, todayISO } from '../config'
 import { ModulePage } from '../ModulePage'
+import { PendingDrafts } from '../../components/PendingDrafts'
 
 // ------------------------------------------------------------------ tipos
 type Flag = 'baixo' | 'normal' | 'alto' | 'alterado'
@@ -1100,6 +1101,7 @@ export function HealthPage({ ownerId, embedded = false }: { ownerId?: string; em
   const owner = ownerId ?? session!.user.id
   const readOnly = owner !== session?.user.id
   const [tab, setTab] = useState<Tab>(() => (new URLSearchParams(location.search).get('aba') as Tab) || 'exames')
+  const [rk, setRk] = useState(0)
 
   return (
     <div>
@@ -1107,6 +1109,7 @@ export function HealthPage({ ownerId, embedded = false }: { ownerId?: string; em
         <PageHeader title="Saúde" subtitle="Exames, remédios, consultas e diário de sintomas."
           actions={!readOnly && <Link to="/app/assistente" className="btn-outline"><Sparkles className="size-4" /> Pelo assistente</Link>} />
       )}
+      {!readOnly && <PendingDrafts moduleKey="saude" moduleName="Saúde" onDecided={() => setRk((k) => k + 1)} />}
       <div className="mb-5 grid grid-cols-4 gap-1 rounded-xl bg-stone-200/60 p-1 dark:bg-stone-800">
         {TABS.map((t) => (
           <button key={t.key} onClick={() => setTab(t.key)}
@@ -1115,10 +1118,10 @@ export function HealthPage({ ownerId, embedded = false }: { ownerId?: string; em
           </button>
         ))}
       </div>
-      {tab === 'exames' && <ExamsTab owner={owner} readOnly={readOnly} />}
-      {tab === 'medicamentos' && <MedsTab owner={owner} readOnly={readOnly} />}
-      {tab === 'consultas' && <ConsultsTab owner={owner} readOnly={readOnly} />}
-      {tab === 'diario' && <ModulePage config={MODULES.saude} ownerId={ownerId} embedded />}
+      {tab === 'exames' && <ExamsTab key={rk} owner={owner} readOnly={readOnly} />}
+      {tab === 'medicamentos' && <MedsTab key={rk} owner={owner} readOnly={readOnly} />}
+      {tab === 'consultas' && <ConsultsTab key={rk} owner={owner} readOnly={readOnly} />}
+      {tab === 'diario' && <ModulePage key={rk} config={MODULES.saude} ownerId={ownerId} embedded />}
       <p className="mt-8 text-xs text-stone-500">
         Registro pessoal, sem valor de diagnóstico. A leitura por IA pode errar: confira sempre com o documento original e converse com seu médico antes de mudar qualquer tratamento.
       </p>

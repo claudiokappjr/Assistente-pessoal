@@ -4,9 +4,10 @@ import { useAuth } from '../../auth/AuthProvider'
 import { MODULE_ICONS } from '../../components/AppLayout'
 import { Alert, EmptyState, PageHeader, Spinner } from '../../components/ui'
 import { formatDateTime } from '../../lib/format'
+import { notifyDraftsChanged } from '../../lib/pending'
 import { errorMessage, supabase } from '../../lib/supabase'
 
-interface Draft {
+export interface Draft {
   id: string
   message_id: string
   module_key: string | null
@@ -103,7 +104,7 @@ export function Composer({ onSent, autoFocus }: { onSent?: () => void; autoFocus
   )
 }
 
-function DraftCard({ d, onChange, moduleName }: { d: Draft; onChange: () => void; moduleName?: string }) {
+export function DraftCard({ d, onChange, moduleName }: { d: Draft; onChange: () => void; moduleName?: string }) {
   const [editing, setEditing] = useState(false)
   const [title, setTitle] = useState(d.title)
   const [fields, setFields] = useState<Record<string, string>>(() =>
@@ -132,6 +133,7 @@ function DraftCard({ d, onChange, moduleName }: { d: Draft; onChange: () => void
     const { error } = await supabase.from('assistant_drafts').update(patch).eq('id', d.id)
     setBusy(false)
     if (error) return setError(errorMessage(error))
+    notifyDraftsChanged()
     onChange()
   }
 
@@ -197,13 +199,25 @@ export function InboxPage() {
       .order('created_at', { ascending: false }).limit(50)
     setMessages((data ?? []) as Message[])
   }, [])
-  useEffect(() => { void load() }, [load])
+  useEffect(() => {
+    void load()
+    const h = () => void load()
+    window.addEventListener('drafts-changed', h)
+    return () => window.removeEventListener('drafts-changed', h)
+  }, [load])
   useEffect(() => {
     supabase.from('modules').select('key, name').then(({ data }) => setAllModules(Object.fromEntries((data ?? []).map((m) => [m.key, m.name]))))
   }, [])
 
   const pendingCount = useMemo(() => (messages ?? []).reduce((n, m) => n + m.assistant_drafts.filter((d) => d.status === 'pending').length + (m.status === 'failed' ? 1 : 0), 0), [messages])
   const shown = (messages ?? []).filter((m) => tab === 'todas' || m.status === 'failed' || m.status === 'processing' || m.assistant_drafts.some((d) => d.status === 'pending'))
+
+  const approvable = (messages ?? []).flatMap((m) => m.assistant_drafts).filter((d) => d.status === 'pending' && d.module_key)
+  async function approveAll() {
+    if (!approvable.length || !confirm(`Aprovar os ${approvable.length} registros pendentes como estão?`)) return
+    await supabase.from('assistant_drafts').update({ status: 'confirmed' }).in('id', approvable.map((d) => d.id)).eq('status', 'pending')
+    notifyDraftsChanged()
+  }
 
   async function reprocess(id: string) {
     setReprocessing(id)
@@ -231,6 +245,9 @@ export function InboxPage() {
             {t === 'pendentes' ? `Pendentes${pendingCount ? ` (${pendingCount})` : ''}` : 'Todas'}
           </button>
         ))}
+        {tab === 'pendentes' && approvable.length > 1 && (
+          <button className="btn-primary ml-auto !px-3 !py-1.5" onClick={() => void approveAll()}><Check className="size-4" /> Aprovar todos ({approvable.length})</button>
+        )}
       </div>
 
       {messages === null && <Spinner className="size-6" />}

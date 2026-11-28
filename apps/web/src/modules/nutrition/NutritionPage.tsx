@@ -10,6 +10,7 @@ import { errorMessage, supabase } from '../../lib/supabase'
 import { MODULES, todayISO } from '../config'
 import { ModulePage } from '../ModulePage'
 import { NutritionDashboard } from '../wellness/NutritionDashboard'
+import { PendingDrafts } from '../../components/PendingDrafts'
 
 // ------------------------------------------------------------------ tipos e rótulos
 export type MealType = 'cafe' | 'lanche' | 'almoco' | 'jantar'
@@ -727,6 +728,7 @@ export function NutritionPage({ ownerId, embedded = false }: { ownerId?: string;
         <PageHeader title="Nutrição" subtitle="Refeições, receitas, cardápio da semana e lista de compras."
           actions={!readOnly && <Link to="/app/assistente" className="btn-outline"><Sparkles className="size-4" /> Pelo assistente</Link>} />
       )}
+      {!readOnly && <PendingDrafts moduleKey="nutricao" moduleName="Nutrição" onDecided={() => setRefreshKey((k) => k + 1)} />}
       <div className="mb-5 grid grid-cols-4 gap-1 rounded-xl bg-stone-200/60 p-1 dark:bg-stone-800">
         {TABS.map((t) => (
           <button key={t.key} onClick={() => setTab(t.key)}
@@ -739,7 +741,7 @@ export function NutritionPage({ ownerId, embedded = false }: { ownerId?: string;
         <>
           <NutritionDashboard owner={owner} readOnly={readOnly} refreshKey={refreshKey} />
           <h3 className="mb-2 text-sm font-semibold text-stone-600 dark:text-stone-300">Todos os registros do mês</h3>
-          <ModulePage config={MODULES.nutricao} ownerId={ownerId} embedded onChanged={() => setRefreshKey((k) => k + 1)} hideSummary />
+          <ModulePage key={refreshKey} config={MODULES.nutricao} ownerId={ownerId} embedded onChanged={() => setRefreshKey((k) => k + 1)} hideSummary />
         </>
       )}
       {tab !== 'registros' && recipes === null && <Spinner className="size-6" />}

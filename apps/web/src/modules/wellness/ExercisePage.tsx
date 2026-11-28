@@ -6,6 +6,7 @@ import { PageHeader, Spinner } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
 import { MODULES } from '../config'
 import { ModulePage } from '../ModulePage'
+import { PendingDrafts } from '../../components/PendingDrafts'
 import { BarChart, CumulativeChart, GoalsButton, GoalsModal, Ring, fmtInt, useCountUp, useGoals, useShown } from './charts'
 
 interface ExRow {
@@ -130,6 +131,7 @@ export function ExercisePage({ ownerId, embedded = false }: { ownerId?: string; 
           )} />
       )}
 
+      {!readOnly && <PendingDrafts moduleKey="exercicios" moduleName="Exercícios" onDecided={() => setRefresh((x) => x + 1)} />}
       <div className="mb-4 flex items-center justify-between">
         <button className="btn-ghost !p-2" onClick={() => shift(-1)} aria-label="Mês anterior"><ChevronLeft className="size-5" /></button>
         <div className="font-medium capitalize">{MONTHS[ym.m]} de {ym.y}</div>
@@ -187,7 +189,7 @@ export function ExercisePage({ ownerId, embedded = false }: { ownerId?: string; 
       )}
 
       <h3 className="mb-2 text-sm font-semibold text-stone-600 dark:text-stone-300">Registros</h3>
-      <ModulePage config={MODULES.exercicios} ownerId={ownerId} embedded ym={ym} onChanged={() => setRefresh((x) => x + 1)} hideSummary />
+      <ModulePage key={refresh} config={MODULES.exercicios} ownerId={ownerId} embedded ym={ym} onChanged={() => setRefresh((x) => x + 1)} hideSummary />
 
       {editGoals && <GoalsModal owner={owner} goals={g} focus="treino" onClose={() => setEditGoals(false)} onSaved={() => { setEditGoals(false); void reloadGoals(); setRefresh((x) => x + 1) }} />}
     </div>
