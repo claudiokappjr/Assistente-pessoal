@@ -496,4 +496,13 @@ set local request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
 select test.fails($$select public.whatsapp_start_verification('50000000-0000-0000-0000-000000000001')$$, 'Número já verificado não gera novo código');
 commit;
 
+-- Ferramenta de configuração: só o servidor consulta o token.
+insert into private.setup_tokens (token, purpose) values ('tok-teste', 'whatsapp');
+select test.ok(public.check_setup_token('tok-teste', 'whatsapp') and not public.check_setup_token('tok-teste', 'outro'), 'Token de configuração vale só para o propósito certo');
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000c';
+select test.fails($$select public.check_setup_token('tok-teste', 'whatsapp')$$, 'Usuário logado (mesmo admin) não consulta token de configuração');
+commit;
+
 \echo 'TODOS OS TESTES PASSARAM'
