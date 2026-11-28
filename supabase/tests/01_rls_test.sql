@@ -476,4 +476,24 @@ select test.ok(exists (select 1 from public.medications where name = 'Dipirona' 
   and exists (select 1 from public.consultations where specialty = 'Dermatologia'), 'Assistente leva medicamento e consulta para as abas certas');
 commit;
 
+-- WhatsApp: verificação por código.
+insert into public.whatsapp_identities (id, user_id, phone_e164) values ('50000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-00000000000a', '+5565999990001');
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+select test.ok(public.whatsapp_start_verification('50000000-0000-0000-0000-000000000001') ~ '^[0-9]{6}$', 'Dono gera código de 6 dígitos para verificar o WhatsApp');
+select test.ok((select verified_at from public.whatsapp_identities where id = '50000000-0000-0000-0000-000000000001') is null, 'Gerar código não verifica o número sozinho');
+commit;
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000d';
+select test.fails($$select public.whatsapp_start_verification('50000000-0000-0000-0000-000000000001')$$, 'Estranho não gera código para número alheio');
+commit;
+update public.whatsapp_identities set verified_at = now() where id = '50000000-0000-0000-0000-000000000001';
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+select test.fails($$select public.whatsapp_start_verification('50000000-0000-0000-0000-000000000001')$$, 'Número já verificado não gera novo código');
+commit;
+
 \echo 'TODOS OS TESTES PASSARAM'

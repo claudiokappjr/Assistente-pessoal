@@ -105,24 +105,41 @@ function PasswordSection() {
   )
 }
 
+/** Número do assistente no WhatsApp (configurado no Vercel quando o canal é ligado). */
+const BOT_NUMBER = ((import.meta.env.VITE_WHATSAPP_NUMBER as string | undefined) ?? '').replace(/\D/g, '')
+
 function WhatsappSection() {
   const { session } = useAuth()
   const [items, setItems] = useState<WhatsappIdentity[] | null>(null)
   const [phone, setPhone] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [code, setCode] = useState<{ id: string; code: string } | null>(null)
 
-  const load = () => supabase.from('whatsapp_identities').select('*').eq('user_id', session!.user.id).order('created_at')
+  const load = () => supabase.from('whatsapp_identities').select('id, user_id, phone_e164, verified_at, created_at').eq('user_id', session!.user.id).order('created_at')
     .then(({ data }) => setItems((data ?? []) as WhatsappIdentity[]))
   useEffect(() => { void load() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  // Enquanto o código está na tela, confere se a verificação chegou.
+  useEffect(() => {
+    if (!code) return
+    const t = setInterval(() => { void load() }, 4000)
+    return () => clearInterval(t)
+  }, [code]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (code && items?.find((w) => w.id === code.id)?.verified_at) setCode(null) }, [items, code])
 
   async function add(e: FormEvent) {
     e.preventDefault()
     setBusy(true); setError('')
     const { error } = await supabase.from('whatsapp_identities').insert({ user_id: session!.user.id, phone_e164: toE164(phone) })
     setBusy(false)
-    if (error) return setError(errorMessage(error))
+    if (error) return setError(/duplicate|unique/i.test(error.message) ? 'Este número já está cadastrado em uma conta.' : errorMessage(error))
     setPhone(''); void load()
+  }
+  async function verify(id: string) {
+    setError('')
+    const { data, error } = await supabase.rpc('whatsapp_start_verification', { _id: id })
+    if (error) return setError(errorMessage(error))
+    setCode({ id, code: String(data) })
   }
   async function remove(id: string) {
     if (!confirm('Remover este número?')) return
@@ -133,17 +150,36 @@ function WhatsappSection() {
 
   return (
     <Section icon={MessageCircle} title="WhatsApp">
-      <Alert kind="info">
-        O canal de WhatsApp ainda <strong>não está ativo</strong> (depende da aprovação da Meta, Fase 2). Cadastre seu número agora; a verificação por código será feita quando o canal for ligado.
-      </Alert>
+      {BOT_NUMBER ? (
+        <Alert kind="info">
+          Mande mensagens para o assistente no WhatsApp <strong>{formatPhone(`+${BOT_NUMBER}`)}</strong>. Antes, cadastre seu número aqui e toque em <strong>Verificar</strong>.
+        </Alert>
+      ) : (
+        <Alert kind="info">
+          O canal de WhatsApp ainda <strong>não está ativo</strong>. Cadastre seu número agora; a verificação fica disponível quando o canal for ligado.
+        </Alert>
+      )}
       <ul className="mt-4 divide-y divide-stone-100 dark:divide-stone-800">
         {items?.map((w) => (
-          <li key={w.id} className="flex items-center gap-3 py-3">
-            <span className="flex-1 font-medium tabular-nums">{formatPhone(w.phone_e164)}</span>
-            <span className={`badge ${w.verified_at ? 'bg-brand-100 text-brand-800' : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'}`}>
-              {w.verified_at ? 'Verificado' : 'Aguardando verificação'}
-            </span>
-            <button className="btn-danger !p-2" onClick={() => void remove(w.id)} aria-label="Remover número"><Trash2 className="size-4" /></button>
+          <li key={w.id} className="py-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="flex-1 font-medium tabular-nums">{formatPhone(w.phone_e164)}</span>
+              <span className={`badge ${w.verified_at ? 'bg-brand-100 text-brand-800' : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'}`}>
+                {w.verified_at ? 'Verificado' : 'Aguardando verificação'}
+              </span>
+              {!w.verified_at && BOT_NUMBER && <button className="btn-outline !px-3 !py-1.5" onClick={() => void verify(w.id)}>Verificar</button>}
+              <button className="btn-danger !p-2" onClick={() => void remove(w.id)} aria-label="Remover número"><Trash2 className="size-4" /></button>
+            </div>
+            {code?.id === w.id && (
+              <div className="mt-3 rounded-2xl border border-brand-200 bg-brand-50 p-4 text-sm dark:border-brand-800 dark:bg-brand-900/30">
+                <p>Envie este código <strong>do seu WhatsApp {formatPhone(w.phone_e164)}</strong> para o assistente:</p>
+                <p className="my-2 font-display text-3xl font-semibold tracking-[0.3em] tabular-nums">{code.code}</p>
+                <a className="btn-primary" href={`https://wa.me/${BOT_NUMBER}?text=${encodeURIComponent(`Código ${code.code}`)}`} target="_blank" rel="noreferrer">
+                  <MessageCircle className="size-4" /> Abrir WhatsApp com o código
+                </a>
+                <p className="mt-2 flex items-center gap-2 text-xs text-stone-500"><Spinner className="size-3" /> Esperando a mensagem… vale por 30 minutos.</p>
+              </div>
+            )}
           </li>
         ))}
       </ul>
