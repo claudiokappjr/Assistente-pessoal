@@ -661,4 +661,17 @@ commit;
 
 select test.ok((select name from public.modules where key = 'saude') = 'Saúde e Medicina', 'Módulo Saúde se chama Saúde e Medicina');
 
+-- Pedido de acesso junto com o convite pendente (Bruno convida Ciro).
+insert into auth.users (id, email, raw_user_meta_data) values ('00000000-0000-0000-0000-0000000000c1', 'ciro@teste.com', '{"full_name":"Ciro"}');
+insert into public.professional_client_links (professional_id, client_id, invited_by) values ('00000000-0000-0000-0000-00000000000b', '00000000-0000-0000-0000-0000000000c1', '00000000-0000-0000-0000-00000000000b')
+on conflict do nothing;
+update public.subscriptions set pro_modules = '{saude,agenda}' where user_id = '00000000-0000-0000-0000-00000000000b' and status = 'active';
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000b';
+select test.ok((select count(*) from public.professional_client_links where client_id = '00000000-0000-0000-0000-0000000000c1' and status = 'invited') = 1, 'Convite pendente existe');
+insert into public.consent_requests (client_id, module_key) values ('00000000-0000-0000-0000-0000000000c1', 'saude');
+select test.ok((select count(*) from public.consent_requests where client_id = '00000000-0000-0000-0000-0000000000c1') = 1, 'Pedido de acesso acompanha o convite');
+commit;
+
 \echo 'TODOS OS TESTES PASSARAM'

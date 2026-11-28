@@ -26,6 +26,8 @@ interface Body {
   plan_key?: string
   pro_modules?: string[]
   seats?: number | null
+  /** Profissional: módulos que quer acompanhar (vira pedido de acesso ao cliente). */
+  modules?: string[]
 }
 
 Deno.serve(async (req) => {
@@ -131,21 +133,31 @@ Deno.serve(async (req) => {
   if (body.mode === 'professional') {
     const { data: pp } = await db.from('professional_profiles').select('approved_at').eq('user_id', caller.id).maybeSingle()
     if (!pp?.approved_at) return json({ error: 'Seu cadastro profissional ainda não foi aprovado' }, 403)
-    const { data: subs } = await db.from('subscriptions').select('seats, plans!inner(audience, limits)')
+    const { data: subs } = await db.from('subscriptions').select('seats, pro_modules, plans!inner(audience, limits)')
       .eq('user_id', caller.id).eq('status', 'active').eq('plans.audience', 'professional')
       .order('created_at', { ascending: false }).limit(1)
-    const sub = subs?.[0] as unknown as { seats: number | null; plans: { limits: Record<string, number> } } | undefined
+    const sub = subs?.[0] as unknown as { seats: number | null; pro_modules: string[] | null; plans: { limits: Record<string, number> } } | undefined
     if (!sub) return json({ error: 'Seu plano profissional não está ativo' }, 403)
     const seats = sub.seats ?? Number(sub.plans.limits?.clientes ?? 0)
     const { count } = await db.from('professional_client_links').select('id', { count: 'exact', head: true })
       .eq('professional_id', caller.id).in('status', ['invited', 'active'])
     if ((count ?? 0) >= seats) return json({ error: `Todas as ${seats} vagas do seu plano estão em uso` }, 409)
 
+    // Pedido de acesso aos módulos escolhidos (só os do plano); o cliente decide.
+    const wanted = [...new Set(body.modules ?? [])].filter((m) => (sub.pro_modules ?? []).includes(m))
+    const requestAccess = async (clientId: string) => {
+      if (!wanted.length) return 0
+      const { error } = await db.from('consent_requests').insert(wanted.map((m) => ({ professional_id: caller.id, client_id: clientId, module_key: m })))
+      if (error && error.code !== '23505') console.error('consent_requests', error.message)
+      return error ? 0 : wanted.length
+    }
+
     if (existingId) {
       if (existingId === caller.id) return json({ error: 'Este é o seu próprio e-mail' }, 400)
       const { error } = await db.from('professional_client_links').insert({ professional_id: caller.id, client_id: existingId, invited_by: caller.id })
       if (error) return json({ error: error.code === '23505' ? 'Este cliente já está vinculado a você' : error.message }, 409)
-      return json({ ok: true, existed: true, user_id: existingId })
+      const requested = await requestAccess(existingId)
+      return json({ ok: true, existed: true, user_id: existingId, requested })
     }
 
     let created
@@ -157,7 +169,8 @@ Deno.serve(async (req) => {
       user_id: created.userId, plan_id: individual.id, status: 'active', source: 'professional',
       sponsor_id: caller.id, started_at: new Date().toISOString(), created_by: caller.id,
     })
-    return json({ ok: true, user_id: created.userId, action_link: created.link })
+    const requested = await requestAccess(created.userId)
+    return json({ ok: true, user_id: created.userId, action_link: created.link, requested })
   }
 
   return json({ error: 'Modo inválido' }, 400)

@@ -81,6 +81,11 @@ export function MyProfessionalsPage() {
               )}
             </div>
 
+            {l.status === 'invited' && requests.some((r) => r.professional_id === l.professional_id) && (
+              <div className="mt-4 rounded-xl bg-amber-50 px-3 py-2.5 text-sm text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+                Este profissional pediu para ver: <strong>{requests.filter((r) => r.professional_id === l.professional_id).map((r) => modules.find((m) => m.key === r.module_key)?.name ?? r.module_key).join(', ')}</strong>. Aceite o convite e depois escolha o que liberar.
+              </div>
+            )}
             {l.status === 'active' && (
               <ClientAccessRequests requests={requests.filter((r) => r.professional_id === l.professional_id)} modules={modules} onChanged={() => void load()} />
             )}

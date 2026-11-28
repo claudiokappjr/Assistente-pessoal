@@ -177,6 +177,9 @@ export function ProClientsPage() {
   const { proPlan, refresh } = useAuth()
   const [msg, setMsg] = useState<{ kind: 'error' | 'success'; text: string } | null>(null)
   const [busy, setBusy] = useState(false)
+  const [wanted, setWanted] = useState<string[] | null>(null)
+  const chosen = wanted ?? proPlan?.pro_modules ?? []
+  const toggle = (k: string) => setWanted(chosen.includes(k) ? chosen.filter((x) => x !== k) : [...chosen, k])
 
   const load = useCallback(async () => {
     const [l, c, m] = await Promise.all([
@@ -196,15 +199,16 @@ export function ProClientsPage() {
   async function invite(e: FormEvent) {
     e.preventDefault()
     setBusy(true); setMsg(null); setLink('')
-    const { data, error } = await supabase.functions.invoke('manage-users', { body: { mode: 'professional', email, full_name: clientName } })
+    const { data, error } = await supabase.functions.invoke('manage-users', { body: { mode: 'professional', email, full_name: clientName, modules: chosen } })
     setBusy(false)
     if (error) {
       let detail = errorMessage(error)
       try { detail = (await (error as { context?: Response }).context?.json())?.error ?? detail } catch { /* sem corpo */ }
       return setMsg({ kind: 'error', text: detail })
     }
-    if (data.existed) setMsg({ kind: 'success', text: 'Essa pessoa já tinha conta: o convite aparece para ela em "Meus profissionais".' })
-    else { setLink(data.action_link); setLinkName(clientName) }
+    const asked = data.requested ? ` Pedido de acesso a ${data.requested} módulo(s) enviado: ela libera em "Meus profissionais".` : ''
+    if (data.existed) setMsg({ kind: 'success', text: `Essa pessoa já tinha conta: o convite aparece para ela em "Meus profissionais".${asked}` })
+    else { setLink(data.action_link); setLinkName(clientName); if (asked) setMsg({ kind: 'success', text: asked.trim() }) }
     setEmail(''); setClientName('')
     void load(); void refresh()
   }
@@ -230,6 +234,19 @@ export function ProClientsPage() {
             <input className="input" value={clientName} onChange={(e) => setClientName(e.target.value)} placeholder="Nome completo" required />
             <input type="email" className="input" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="cliente@email.com" required />
           </div>
+          {proPlan.pro_modules.length > 0 && (
+            <div>
+              <div className="mb-1.5 text-sm text-stone-600 dark:text-stone-400">Módulos que você quer acompanhar (o cliente decide se libera)</div>
+              <div className="flex flex-wrap gap-2">
+                {proPlan.pro_modules.map((k) => (
+                  <button type="button" key={k} onClick={() => toggle(k)}
+                    className={`rounded-full border px-3 py-1 text-xs font-medium transition ${chosen.includes(k) ? 'border-brand-500 bg-brand-50 text-brand-800 dark:bg-brand-900/30 dark:text-brand-200' : 'border-stone-300 text-stone-500 dark:border-stone-700'}`}>
+                    {chosen.includes(k) ? '✓ ' : ''}{modules.find((m) => m.key === k)?.name ?? k}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           <button className="btn-primary" disabled={busy || proPlan.seats_used >= proPlan.seats}>{busy ? <Spinner /> : <MailPlus className="size-4" />} Cadastrar</button>
           <p className="text-xs text-stone-500">O cliente usa todos os módulos pelo seu plano. Você só vê os módulos que contratou e que ele autorizar.</p>
           {msg && <Alert kind={msg.kind}>{msg.text}</Alert>}
@@ -344,7 +361,7 @@ export function ProClientDetailPage() {
       <PageHeader title={name ?? 'Cliente'} subtitle={link?.status === 'active' ? `Cliente desde ${formatDate(link.accepted_at)} · somente leitura` : 'Vínculo não está ativo'}
         actions={link && link.status !== 'ended' && <div className="flex flex-wrap justify-end gap-2"><AccessLinkButton userId={clientId!} name={name ?? 'Cliente'} className="btn-outline" /></div>} />
       {link?.status === 'invited' && <div className="mb-4"><Alert kind="info">O cliente ainda não aceitou o convite. Se ele não conseguiu entrar, gere um novo link de acesso e envie por WhatsApp.</Alert></div>}
-      {link?.status === 'active' && (
+      {(link?.status === 'active' || link?.status === 'invited') && (
         <ProAccessRequest clientId={clientId!} proId={session!.user.id} contracted={[...contracted]} consented={consents.map((c) => c.module_key)} modules={modules} onChanged={() => undefined} />
       )}
       {link?.status !== 'active' ? (
